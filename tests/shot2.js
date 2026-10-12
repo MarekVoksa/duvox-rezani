@@ -1,0 +1,36 @@
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch({executablePath:'/opt/pw-browsers/chromium'});
+  const p = await b.newPage({ viewport: { width: 400, height: 860 } });
+  const errs=[]; p.on('pageerror', e => errs.push(e.message));
+  const html = require('fs').readFileSync(require('path').join(__dirname,'../dist/index.html'),'utf8');
+  await p.route('http://t/', r => r.fulfill({contentType:'text/html', body:'<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>'+html+'</body></html>'}));
+  await p.goto('http://t/'); await p.waitForTimeout(800);
+  await p.screenshot({ path: 'k0-list.png' });
+  await p.click('[data-act=open-job]'); await p.waitForTimeout(300);
+  await p.selectOption('#job-system', {label:'Synego'}); await p.waitForTimeout(200);
+  await p.screenshot({ path: 'k1-job.png' });
+  // picker filtered by system
+  await p.click('[data-g] >> nth=2 >> [data-act=open-pick][data-kind=profiles]'); await p.waitForTimeout(200);
+  console.log('filtered', await p.$$eval('#pick-list .opt', x=>x.map(o=>o.textContent.trim())));
+  await p.click('[data-act=pick-all]'); console.log('all', (await p.$$eval('#pick-list .opt', x=>x.length)));
+  await p.click('[data-act=close-pick]');
+  await p.click('[data-act=optimize]'); await p.waitForTimeout(1500);
+  await p.click('[data-act=save-result]'); await p.waitForTimeout(300);
+  await p.click('[data-act=back-job]'); await p.waitForTimeout(300);
+  await p.evaluate(()=>window.scrollTo(0, 350)); await p.waitForTimeout(100);
+  await p.screenshot({ path: 'k2-cut.png' });
+  await p.evaluate(()=>window.scrollTo(0, 99999)); await p.waitForTimeout(100);
+  await p.screenshot({ path: 'k3-bottom.png' });
+  await p.click('#tabs [data-tab=jobs]'); await p.click('[data-act=close-job]').catch(()=>{}); await p.waitForTimeout(200);
+  console.log('card', await p.$eval('.card .small', e=>e.textContent));
+  await p.click('#tabs [data-tab=catalog]'); await p.click('[data-act=cat-tab][data-kind=profiles]'); await p.click('[data-act=cat-new]'); await p.selectOption('#e-system','__new'); await p.fill('#e-newsys','Brillant'); await p.fill('#e-name','R68'); await p.click('[data-act=cat-save]'); await p.waitForTimeout(200);
+  await p.fill('#cat-q','brillant'); await p.waitForTimeout(200);
+  console.log('cat search', await p.$$eval('.cat .opt', x=>x.map(o=>o.textContent.replace(/\s+/g,' ').trim())));
+  await p.fill('#cat-q',''); await p.click('[data-act=cat-tab][data-kind=systems]'); await p.waitForTimeout(200);
+  await p.screenshot({ path: 'k4-sys.png' });
+  await p.setViewportSize({width:1200,height:800}); await p.click('#tabs [data-tab=jobs]'); await p.click('[data-act=open-job]').catch(()=>{}); await p.waitForTimeout(200);
+  await p.screenshot({ path: 'k5-desk.png' });
+  console.log('errors', errs, 'sw', await p.evaluate(()=>document.documentElement.scrollWidth));
+  await b.close();
+})();

@@ -1,0 +1,10 @@
+{
+  "name": "duvox-rezani",
+  "private": true,
+  "description": "Duvox Řezání: cutting planner for window and door profiles",
+  "scripts": {
+    "build": "sh build.sh",
+    "test": "sh build.sh && node tests/shot.js && node tests/shot2.js && node tests/repro.js && node tests/pdftest.js"
+  },
+  "devDependencies": { "playwright": "^1.48.0" }
+}

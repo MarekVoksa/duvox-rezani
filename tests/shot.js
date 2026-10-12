@@ -1,0 +1,32 @@
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch({executablePath:'/opt/pw-browsers/chromium'}).catch(()=>chromium.launch());
+  const ctx = await b.newContext({ viewport: { width: 400, height: 860 } });
+  const p = await ctx.newPage();
+  const errs=[]; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => m.type()==='error'&&errs.push(m.text()));
+  const html = require('fs').readFileSync(require('path').join(__dirname,'../dist/index.html'),'utf8');
+  await p.route('http://t/', r => r.fulfill({contentType:'text/html', body:'<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>'+html+'</body></html>'}));
+  await p.goto('http://t/'); await p.waitForTimeout(1200);
+  await p.screenshot({ path: 's1-jobs.png' });
+  await p.click('[data-act=open-job]'); await p.waitForTimeout(300);
+  await p.screenshot({ path: 's2-job.png', fullPage: true });
+  // open color picker on group 3 and search
+  await p.click('[data-g] >> nth=2 >> [data-act=open-pick][data-kind=colors]'); await p.fill('#pick-q','antr'); await p.waitForTimeout(200);
+  await p.screenshot({ path: 's3-pick.png', fullPage: false, clip:{x:0,y:0,width:400,height:860} });
+  await p.click('[data-act=close-pick]');
+  await p.click('[data-act=sel-all]'); await p.waitForTimeout(100);
+  await p.click('[data-act=optimize]'); await p.waitForTimeout(1500);
+  await p.screenshot({ path: 's4-sheet.png', fullPage: true });
+  await p.click('[data-act=save-result]'); await p.waitForTimeout(300);
+  await p.click('#tabs [data-tab=stock]'); await p.waitForTimeout(300);
+  await p.screenshot({ path: 's5-stock.png', fullPage: true });
+  await p.click('#tabs [data-tab=catalog]'); await p.click('[data-act=cat-edit] >> nth=0'); await p.waitForTimeout(200);
+  await p.screenshot({ path: 's6-cat.png', fullPage: true });
+  await p.click('#tabs [data-tab=history]'); await p.waitForTimeout(200);
+  const w = await p.evaluate(()=>document.documentElement.scrollWidth);
+  const hist = await p.evaluate(()=>document.querySelectorAll('.card').length);
+  await p.setViewportSize({width:1200,height:900}); await p.click('#tabs [data-tab=jobs]'); await p.waitForTimeout(200);
+  await p.screenshot({ path: 's7-desk.png' });
+  console.log('errors', errs, 'scrollWidth', w, 'history cards', hist);
+  await b.close();
+})();
