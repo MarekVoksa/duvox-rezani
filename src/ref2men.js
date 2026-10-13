@@ -26,7 +26,7 @@ function parseRef2men(lines) {
     if ((m = t.match(/^(\d{5,8})\s+(\d{2,5})\s+(.+)$/)) && !/°/.test(t)) {
       // short name and color are separate columns; the color is the last cell (see splitArticle)
       const [ozn, color] = splitArticle(lines[i], m[3]);
-      cur = { article: m[1], variant: m[2], ozn, colorText: color, colorCode: '', desc: '', barLen: 0, cuts: [] };
+      cur = { article: m[1], variant: m[2], ozn, colorText: color, colorCode: '', desc: '', barLen: 0, cuts: [], line: i };
       out.blocks.push(cur);
       expectCode = true;
       continue;
@@ -69,7 +69,7 @@ function splitArticle(raw, rest) {
 async function pdfLines(file) {
   await loadPdfJs();
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
-  const lines = [];
+  const lines = [], meta = [];
   for (let n = 1; n <= pdf.numPages; n++) {
     const page = await pdf.getPage(n);
     const tc = await page.getTextContent();
@@ -89,11 +89,57 @@ async function pdfLines(file) {
         if (end !== null) s += it.x - end > r.h * 1.2 ? '     ' : (it.x - end > r.h * 0.15 ? ' ' : '');
         s += it.s; end = it.x + it.w;
       }
-      lines.push(s);
+      lines.push(s); meta.push({ page: n, y: r.y, h: r.h, x: r.items[0].x });
     }
   }
+  lines.meta = meta; lines.pdf = pdf;   // positions, so the profile pictures can be cut out later
   return lines;
 }
+// REF2MEN draws a small cross-section of the profile left of the article number.
+// Render the page and cut that cell out: between the "Číslo artiklu" header and the color-code line, left of the number.
+async function pdfProfileImages(lines, blocks) {
+  if (!lines.meta || !lines.pdf) return;
+  const pages = new Map();
+  for (const b of blocks) {
+    const m = lines.meta[b.line], hdr = lines.meta[b.line - 1], code = lines.meta[b.line + 1];
+    if (!m || !hdr || hdr.page !== m.page) continue;
+    try {
+      if (!pages.has(m.page)) pages.set(m.page, await renderPdfPage(lines.pdf, m.page));
+      const bottom = code && code.page === m.page ? code.y - code.h * 0.9 : m.y - m.h * 2.2;
+      b.img = cropIcon(pages.get(m.page), hdr.x - 4, m.x - 1, hdr.y - hdr.h * 0.4, bottom);
+    } catch (e) { /* a missing picture never blocks the import */ }
+  }
+}
+async function renderPdfPage(pdf, n) {
+  const page = await pdf.getPage(n), vp = page.getViewport({ scale: 4 });
+  const c = document.createElement('canvas'); c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+  return { ctx, vp };
+}
+function cropIcon({ ctx, vp }, x1, x2, yTop, yBottom) {
+  const [ax, ay] = vp.convertToViewportPoint(x1, yTop), [bx, by] = vp.convertToViewportPoint(x2, yBottom);
+  const sx = Math.max(0, Math.round(Math.min(ax, bx))), sy = Math.max(0, Math.round(Math.min(ay, by)));
+  const w = Math.round(Math.abs(bx - ax)), h = Math.round(Math.abs(by - ay));
+  if (w < 10 || h < 10) return null;
+  const d = ctx.getImageData(sx, sy, w, h).data, dark = new Uint8Array(w * h), rows = new Uint32Array(h), cols = new Uint32Array(w);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const k = (y * w + x) * 4;
+    if (d[k] * 0.3 + d[k + 1] * 0.59 + d[k + 2] * 0.11 < 150) { dark[y * w + x] = 1; rows[y]++; cols[x]++; }
+  }
+  // table borders run across the whole cell; ignore them and keep the drawing inside
+  const lineR = y => rows[y] > w * 0.85, lineC = x => cols[x] > h * 0.85;
+  let x0 = w, y0 = h, xm = -1, ym = -1;
+  for (let y = 0; y < h; y++) if (!lineR(y)) for (let x = 0; x < w; x++) if (dark[y * w + x] && !lineC(x)) { if (x < x0) x0 = x; if (x > xm) xm = x; if (y < y0) y0 = y; if (y > ym) ym = y; }
+  if (xm - x0 < 12 || ym - y0 < 12) return null;
+  const pad = 4, cw = xm - x0 + 1 + 2 * pad, ch = ym - y0 + 1 + 2 * pad, k = Math.min(1, 160 / Math.max(cw, ch));
+  const out = document.createElement('canvas'); out.width = Math.round(cw * k); out.height = Math.round(ch * k);
+  const o = out.getContext('2d'); o.fillStyle = '#fff'; o.fillRect(0, 0, out.width, out.height);
+  o.imageSmoothingQuality = 'high';
+  o.drawImage(ctx.canvas, sx + x0 - pad, sy + y0 - pad, cw, ch, 0, 0, out.width, out.height);
+  return out.toDataURL('image/png');
+}
+
 let pdfJsLoading = null;
 function loadPdfJs() {
   if (window.pdfjsLib) return Promise.resolve();

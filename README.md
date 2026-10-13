@@ -10,7 +10,7 @@ Plain HTML, CSS and JavaScript, no framework. Everything is built into one file,
 | --- | --- |
 | `src/ui.html` | Page shell and all CSS (Duvox website look: navy, cream, red and indigo slanted bars, Rokkitt font) |
 | `src/optimizer.js` | Cutting-stock optimizer: tries bar patterns and scores plans on waste plus number of length changes (the "jednoduchost" slider) |
-| `src/ref2men.js` | Reads REF2MEN "Seznam řezů" PDFs with pdf.js (loaded from cdnjs on demand) |
+| `src/ref2men.js` | Reads REF2MEN "Seznam řezů" PDFs with pdf.js (loaded from cdnjs on demand), including the profile cross-section pictures |
 | `src/pdf.js` | Printable A4 PDF export: pages drawn on a canvas, colors plus fill patterns so it also works in black and white |
 | `src/app.js` | App: jobs, catalog (systems, profiles, colors), stock, history, import, plan screen |
 
@@ -25,5 +25,7 @@ Right now the app runs as a claude.ai Artifact and stores its shared data in the
 npm install         # Playwright, for the tests
 npm test            # builds, then drives the app in Chromium
 ```
+
+The import test needs the sample REF2MEN PDF (not in the repo, it holds customer data) and pdf.js from a local folder: `PDFJS_DIR=path/to/pdfjs-dist/build node tests/imptest.js file.pdf`.
 
 `tests/fakedb.js` imitates the artifact database (read-only snapshot data, slow taps), because those two behaviours caused real bugs that plain local runs did not show.

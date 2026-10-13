@@ -24,7 +24,7 @@ function printPattern(ctx, i) {
 }
 
 // Build a list of blocks {h, draw(ctx, y), keepNext}; pages are filled top to bottom without splitting a block.
-function pdfBlocks(r, ctx) {
+function pdfBlocks(r, ctx, imgs = []) {
   const B = [], font = (w, mm) => { ctx.font = `${w} ${mm}px ${PFONT}`; };
   const text = (s, x, y, w, mm, color = '#000', align = 'left') => { font(w, mm); ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'alphabetic'; ctx.fillText(s, x, y); };
   const wrap = (s, w, mm, max) => { font(400, mm); const out = []; let cur = ''; for (const word of s.split(' ')) { const t = cur ? cur + ' ' + word : word; if (ctx.measureText(t).width > max && cur) { out.push(cur); cur = word; } else cur = t; } if (cur) out.push(cur); return out; };
@@ -40,11 +40,13 @@ function pdfBlocks(r, ctx) {
     const pat = len => printPattern(ctx, ci.get(len) ?? 0);
     const summary = s ? [`${s.newBars}× nová tyč ${num(gr.barLen)} mm`, s.stockUsed.length ? `${s.stockUsed.length}× zbytek ze skladu` : '', s.kept.length ? `${s.kept.length}× zbytek do skladu` : '',
       `odpad ${num((s.material ? (s.material - s.piecesLen - s.kept.reduce((a, b) => a + b, 0)) / s.material * 100 : 0).toFixed(1))} %`].filter(Boolean).join(' · ') : '';
+    const im = imgs[gi], iw = im ? Math.min(14, 11 * im.naturalWidth / im.naturalHeight) : 0, tx = im ? 14 + iw + 2.5 : 14;
     B.push({ h: 14, keepNext: true, draw: (c, y) => {
+      if (im) { c.drawImage(im, 13.5, y + 1, iw, 11); c.strokeStyle = '#999'; c.lineWidth = 0.2; c.strokeRect(13.5, y + 1, iw, 11); }
       c.fillStyle = '#000'; c.fillRect(0, y + 1.5, 11, 9);
       text(L, 5.5, y + 8.6, 800, 7, '#fff', 'center');
-      text(gr.title, 14, y + 6, 700, 5);
-      text([gr.sub, summary].filter(Boolean).join('  ·  '), 14, y + 10.6, 400, 3.3, '#333');
+      text(gr.title, tx, y + 6, 700, 5);
+      text([gr.sub, summary].filter(Boolean).join('  ·  '), tx, y + 10.6, 400, 3.3, '#333');
     } });
     for (const e of p.errors || []) B.push({ h: 5, draw: (c, y) => text('! ' + e, 0, y + 3.8, 700, 3.4, '#b00') });
     if (!s) return;
@@ -107,7 +109,14 @@ async function pdfPages(r) {
   try { await document.fonts.load(`700 12px Rokkitt`); await document.fonts.load(`400 12px Rokkitt`); await document.fonts.load(`800 12px Rokkitt`); } catch (e) {}
   const mk = () => { const c = document.createElement('canvas'); c.width = Math.round(PAGE_W * MM); c.height = Math.round(PAGE_H * MM); const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.setTransform(MM, 0, 0, MM, MARGIN * MM, MARGIN * MM); return { c, x }; };
   const probe = mk();
-  const blocks = pdfBlocks(r, probe.x), bottom = PAGE_H - 2 * MARGIN - 6;
+  // profile pictures (from REF2MEN) next to each profile heading
+  const imgs = await Promise.all(r.groups.map(gr => {
+    const p = typeof P === 'function' && P(gr.group.profileId);
+    if (!p || !p.img) return null;
+    const im = new Image(); im.src = p.img;
+    return im.decode().then(() => im, () => null);
+  }));
+  const blocks = pdfBlocks(r, probe.x, imgs), bottom = PAGE_H - 2 * MARGIN - 6;
   // paginate: a profile heading stays with the bar below it
   const pages = [[]]; let y = 0;
   blocks.forEach((b, i) => {

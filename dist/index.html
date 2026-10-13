@@ -103,6 +103,12 @@ button.x:hover { color: var(--red-ink); }
 .opt:hover, .opt:focus-visible { background: var(--soft); }
 .opt small { color: var(--muted); font-weight: 500; font-size: 15px; }
 .opt.add { background: none; color: var(--indigo); border: 2px dashed var(--peri); }
+.pimg { height: 52px; width: auto; max-width: 64px; object-fit: contain; background: #fff; border: 1px solid var(--line); padding: 2px; flex: none; }
+.pimg.sm { height: 34px; max-width: 42px; }
+.pimg.big { height: 96px; max-width: 120px; }
+.fin-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.seg-ctl.fin button { font-size: 16px; padding: 6px 11px; }
+.pickbtn.fixed, .pickbtn.fixed:hover { cursor: default; border-color: var(--line); }
 .sw { width: 22px; height: 22px; flex: none; border: 1px solid rgba(4,4,89,.3); }
 .cuts { width: 100%; border-collapse: collapse; }
 .cuts th { text-align: left; font-size: 15px; color: var(--muted); font-weight: 700; padding: 4px 6px; border-bottom: 2px solid var(--line); }
@@ -388,7 +394,7 @@ function parseRef2men(lines) {
     if ((m = t.match(/^(\d{5,8})\s+(\d{2,5})\s+(.+)$/)) && !/°/.test(t)) {
       // short name and color are separate columns; the color is the last cell (see splitArticle)
       const [ozn, color] = splitArticle(lines[i], m[3]);
-      cur = { article: m[1], variant: m[2], ozn, colorText: color, colorCode: '', desc: '', barLen: 0, cuts: [] };
+      cur = { article: m[1], variant: m[2], ozn, colorText: color, colorCode: '', desc: '', barLen: 0, cuts: [], line: i };
       out.blocks.push(cur);
       expectCode = true;
       continue;
@@ -431,7 +437,7 @@ function splitArticle(raw, rest) {
 async function pdfLines(file) {
   await loadPdfJs();
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
-  const lines = [];
+  const lines = [], meta = [];
   for (let n = 1; n <= pdf.numPages; n++) {
     const page = await pdf.getPage(n);
     const tc = await page.getTextContent();
@@ -451,11 +457,57 @@ async function pdfLines(file) {
         if (end !== null) s += it.x - end > r.h * 1.2 ? '     ' : (it.x - end > r.h * 0.15 ? ' ' : '');
         s += it.s; end = it.x + it.w;
       }
-      lines.push(s);
+      lines.push(s); meta.push({ page: n, y: r.y, h: r.h, x: r.items[0].x });
     }
   }
+  lines.meta = meta; lines.pdf = pdf;   // positions, so the profile pictures can be cut out later
   return lines;
 }
+// REF2MEN draws a small cross-section of the profile left of the article number.
+// Render the page and cut that cell out: between the "Číslo artiklu" header and the color-code line, left of the number.
+async function pdfProfileImages(lines, blocks) {
+  if (!lines.meta || !lines.pdf) return;
+  const pages = new Map();
+  for (const b of blocks) {
+    const m = lines.meta[b.line], hdr = lines.meta[b.line - 1], code = lines.meta[b.line + 1];
+    if (!m || !hdr || hdr.page !== m.page) continue;
+    try {
+      if (!pages.has(m.page)) pages.set(m.page, await renderPdfPage(lines.pdf, m.page));
+      const bottom = code && code.page === m.page ? code.y - code.h * 0.9 : m.y - m.h * 2.2;
+      b.img = cropIcon(pages.get(m.page), hdr.x - 4, m.x - 1, hdr.y - hdr.h * 0.4, bottom);
+    } catch (e) { /* a missing picture never blocks the import */ }
+  }
+}
+async function renderPdfPage(pdf, n) {
+  const page = await pdf.getPage(n), vp = page.getViewport({ scale: 4 });
+  const c = document.createElement('canvas'); c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+  return { ctx, vp };
+}
+function cropIcon({ ctx, vp }, x1, x2, yTop, yBottom) {
+  const [ax, ay] = vp.convertToViewportPoint(x1, yTop), [bx, by] = vp.convertToViewportPoint(x2, yBottom);
+  const sx = Math.max(0, Math.round(Math.min(ax, bx))), sy = Math.max(0, Math.round(Math.min(ay, by)));
+  const w = Math.round(Math.abs(bx - ax)), h = Math.round(Math.abs(by - ay));
+  if (w < 10 || h < 10) return null;
+  const d = ctx.getImageData(sx, sy, w, h).data, dark = new Uint8Array(w * h), rows = new Uint32Array(h), cols = new Uint32Array(w);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const k = (y * w + x) * 4;
+    if (d[k] * 0.3 + d[k + 1] * 0.59 + d[k + 2] * 0.11 < 150) { dark[y * w + x] = 1; rows[y]++; cols[x]++; }
+  }
+  // table borders run across the whole cell; ignore them and keep the drawing inside
+  const lineR = y => rows[y] > w * 0.85, lineC = x => cols[x] > h * 0.85;
+  let x0 = w, y0 = h, xm = -1, ym = -1;
+  for (let y = 0; y < h; y++) if (!lineR(y)) for (let x = 0; x < w; x++) if (dark[y * w + x] && !lineC(x)) { if (x < x0) x0 = x; if (x > xm) xm = x; if (y < y0) y0 = y; if (y > ym) ym = y; }
+  if (xm - x0 < 12 || ym - y0 < 12) return null;
+  const pad = 4, cw = xm - x0 + 1 + 2 * pad, ch = ym - y0 + 1 + 2 * pad, k = Math.min(1, 160 / Math.max(cw, ch));
+  const out = document.createElement('canvas'); out.width = Math.round(cw * k); out.height = Math.round(ch * k);
+  const o = out.getContext('2d'); o.fillStyle = '#fff'; o.fillRect(0, 0, out.width, out.height);
+  o.imageSmoothingQuality = 'high';
+  o.drawImage(ctx.canvas, sx + x0 - pad, sy + y0 - pad, cw, ch, 0, 0, out.width, out.height);
+  return out.toDataURL('image/png');
+}
+
 let pdfJsLoading = null;
 function loadPdfJs() {
   if (window.pdfjsLib) return Promise.resolve();
@@ -492,7 +544,7 @@ function printPattern(ctx, i) {
 }
 
 // Build a list of blocks {h, draw(ctx, y), keepNext}; pages are filled top to bottom without splitting a block.
-function pdfBlocks(r, ctx) {
+function pdfBlocks(r, ctx, imgs = []) {
   const B = [], font = (w, mm) => { ctx.font = `${w} ${mm}px ${PFONT}`; };
   const text = (s, x, y, w, mm, color = '#000', align = 'left') => { font(w, mm); ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'alphabetic'; ctx.fillText(s, x, y); };
   const wrap = (s, w, mm, max) => { font(400, mm); const out = []; let cur = ''; for (const word of s.split(' ')) { const t = cur ? cur + ' ' + word : word; if (ctx.measureText(t).width > max && cur) { out.push(cur); cur = word; } else cur = t; } if (cur) out.push(cur); return out; };
@@ -508,11 +560,13 @@ function pdfBlocks(r, ctx) {
     const pat = len => printPattern(ctx, ci.get(len) ?? 0);
     const summary = s ? [`${s.newBars}× nová tyč ${num(gr.barLen)} mm`, s.stockUsed.length ? `${s.stockUsed.length}× zbytek ze skladu` : '', s.kept.length ? `${s.kept.length}× zbytek do skladu` : '',
       `odpad ${num((s.material ? (s.material - s.piecesLen - s.kept.reduce((a, b) => a + b, 0)) / s.material * 100 : 0).toFixed(1))} %`].filter(Boolean).join(' · ') : '';
+    const im = imgs[gi], iw = im ? Math.min(14, 11 * im.naturalWidth / im.naturalHeight) : 0, tx = im ? 14 + iw + 2.5 : 14;
     B.push({ h: 14, keepNext: true, draw: (c, y) => {
+      if (im) { c.drawImage(im, 13.5, y + 1, iw, 11); c.strokeStyle = '#999'; c.lineWidth = 0.2; c.strokeRect(13.5, y + 1, iw, 11); }
       c.fillStyle = '#000'; c.fillRect(0, y + 1.5, 11, 9);
       text(L, 5.5, y + 8.6, 800, 7, '#fff', 'center');
-      text(gr.title, 14, y + 6, 700, 5);
-      text([gr.sub, summary].filter(Boolean).join('  ·  '), 14, y + 10.6, 400, 3.3, '#333');
+      text(gr.title, tx, y + 6, 700, 5);
+      text([gr.sub, summary].filter(Boolean).join('  ·  '), tx, y + 10.6, 400, 3.3, '#333');
     } });
     for (const e of p.errors || []) B.push({ h: 5, draw: (c, y) => text('! ' + e, 0, y + 3.8, 700, 3.4, '#b00') });
     if (!s) return;
@@ -575,7 +629,14 @@ async function pdfPages(r) {
   try { await document.fonts.load(`700 12px Rokkitt`); await document.fonts.load(`400 12px Rokkitt`); await document.fonts.load(`800 12px Rokkitt`); } catch (e) {}
   const mk = () => { const c = document.createElement('canvas'); c.width = Math.round(PAGE_W * MM); c.height = Math.round(PAGE_H * MM); const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.setTransform(MM, 0, 0, MM, MARGIN * MM, MARGIN * MM); return { c, x }; };
   const probe = mk();
-  const blocks = pdfBlocks(r, probe.x), bottom = PAGE_H - 2 * MARGIN - 6;
+  // profile pictures (from REF2MEN) next to each profile heading
+  const imgs = await Promise.all(r.groups.map(gr => {
+    const p = typeof P === 'function' && P(gr.group.profileId);
+    if (!p || !p.img) return null;
+    const im = new Image(); im.src = p.img;
+    return im.decode().then(() => im, () => null);
+  }));
+  const blocks = pdfBlocks(r, probe.x, imgs), bottom = PAGE_H - 2 * MARGIN - 6;
   // paginate: a profile heading stays with the bar below it
   const pages = [[]]; let y = 0;
   blocks.forEach((b, i) => {
@@ -647,7 +708,7 @@ let pick = null;      // {ctx, kind, q}
 let edit = null;      // {kind, id|null}
 let confirmKey = null;
 let imp = null;       // REF2MEN import being reviewed
-const stockForm = { profileId: null, colorId: null };
+const stockForm = { profileId: null, colorId: null, finish: 'dekor-bila' };
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -737,6 +798,20 @@ function jobSystems(j) {
 const cName = c => c ? c.name : 'Neznámá barva';
 const pSub = p => p && p.code ? 'art. ' + p.code : '';
 const cSub = c => c ? [c.code, c.finish].filter(Boolean).join(' · ') : '';
+// Provedení: which side carries the decor foil. "Bílá" is white on both sides and needs no color.
+// Objects with profileId/colorId/finish (job groups, stock, import blocks) share these helpers.
+const FINISHES = [['bila', 'Bílá', 'bílá z obou stran'], ['dekor-bila', 'Dekor/bílá', 'dekor venku, uvnitř bílá'], ['dekor', 'Dekor', 'dekor z obou stran'], ['bila-dekor', 'Bílá/dekor', 'dekor uvnitř, venku bílá']];
+const isWhiteText = s => /^(bila|bily|bile|weiss|white)\b/.test(norm(s).trim());
+const isWhite = c => !!c && isWhiteText(c.name);
+// older records have no finish: a white color means "bílá", anything else the usual "dekor/bílá"
+const finOf = o => o.finish || (isWhite(C(o.colorId)) ? 'bila' : 'dekor-bila');
+const needsColor = o => finOf(o) !== 'bila';
+const hasColor = o => !needsColor(o) || !!o.colorId;
+const colorKey = o => needsColor(o) ? o.colorId + '|' + finOf(o) : 'bila';
+const finText = o => FINISHES.find(f => f[0] === finOf(o))[1].toLowerCase();
+const colorLabel = o => needsColor(o) ? `${cName(C(o.colorId))} (${finText(o)})` : 'bílá';
+const decorLabel = o => ({ 'dekor-bila': 'Dekor venku', dekor: 'Dekor (obě strany)', 'bila-dekor': 'Dekor uvnitř' })[finOf(o)];
+const pImg = (p, cls = 'pimg') => p && p.img ? `<img class="${cls}" src="${esc(p.img)}" alt="">` : '';
 const swatch = c => c && c.hex ? `<span class="sw" style="background:${esc(c.hex)}"></span>` : '<span class="sw" style="background:repeating-linear-gradient(135deg,#fff 0 4px,#ddd 4px 6px)"></span>';
 const hay = (o, kind) => norm(kind === 'profiles' ? [pName(o), o.code, (o.aliases || []).join(' ')].join(' ') : [o.name, o.code, o.finish, (o.aliases || []).join(' ')].join(' '));
 const oName = (kind, o) => kind === 'profiles' ? pName(o) : o.name;
@@ -744,10 +819,9 @@ function search(kind, q) {
   const toks = norm(q).split(/\s+/).filter(Boolean);
   return [...D[kind].values()].filter(o => toks.every(t => hay(o, kind).includes(t))).sort((a, b) => oName(kind, a).localeCompare(oName(kind, b), 'cs'));
 }
-const stockKey = (profileId, colorId) => profileId + '|' + colorId;
 function stockFor(g) {
   const out = [];
-  for (const s of D.stock.values()) if (s.profileId === g.profileId && s.colorId === g.colorId) for (let i = 0; i < s.qty; i++) out.push({ len: s.len, id: s.id });
+  for (const s of D.stock.values()) if (s.profileId === g.profileId && colorKey(s) === colorKey(g)) for (let i = 0; i < s.qty; i++) out.push({ len: s.len, id: s.id });
   return out;
 }
 function summarizeLens(lens) {
@@ -776,21 +850,20 @@ function exampleData() {
   ];
   const colors = [
     { id: 'ex-c-bila', name: 'Bílá', code: '', finish: 'hladká', hex: '#f4f4f0' },
-    { id: 'ex-c-antracit-obo', name: 'Antracit', code: 'RAL 7016', finish: 'fólie oboustranně', hex: '#383e42' },
-    { id: 'ex-c-antracit-bila', name: 'Antracit / bílá', code: 'RAL 7016', finish: 'fólie venku, uvnitř bílá', hex: '#383e42' },
-    { id: 'ex-c-zlaty-dub', name: 'Zlatý dub', code: '', finish: 'fólie oboustranně', hex: '#a8692e' },
-    { id: 'ex-c-orech', name: 'Ořech', code: '', finish: 'fólie oboustranně', hex: '#6b3f23' }
+    { id: 'ex-c-antracit', name: 'Antracit', code: 'RAL 7016', finish: 'fólie hladká', hex: '#383e42' },
+    { id: 'ex-c-zlaty-dub', name: 'Zlatý dub', code: '', finish: 'fólie', hex: '#a8692e' },
+    { id: 'ex-c-orech', name: 'Ořech', code: '', finish: 'fólie', hex: '#6b3f23' }
   ];
   const cuts = list => list.map(([len, qty, label], i) => ({ id: 'c' + i, len, qty, label }));
   const jobs = [{ id: 'ex-job-1', name: 'Ukázka: 3 okna a dveře', created: d, simplicity: 60, groups: [
-    { id: 'g1', profileId: 'ex-p-synego-ram', colorId: 'ex-c-bila', barLen: 6000, useStock: true, selected: true, cuts: cuts([[1500, 4, 'O1 O2 nahoře/dole'], [1450, 4, 'O1 O2 boky'], [1320, 5, 'O3'], [2100, 2, 'Dveře boky'], [1000, 1, 'Dveře nahoře'], [780, 3, 'O4'], [640, 6, 'Fixy']]) },
-    { id: 'g2', profileId: 'ex-p-synego-kridlo', colorId: 'ex-c-bila', barLen: 6000, useStock: true, selected: true, cuts: cuts([[1426, 4, 'O1 O2'], [1376, 4, 'O1 O2'], [1246, 4, 'O3']]) },
-    { id: 'g3', profileId: 'ex-p-geneo-ram', colorId: 'ex-c-antracit-bila', barLen: 6000, useStock: true, selected: false, cuts: cuts([[1180, 2, 'O5'], [980, 2, 'O5'], [600, 4, 'O6']]) }
+    { id: 'g1', profileId: 'ex-p-synego-ram', colorId: null, finish: 'bila', barLen: 6000, useStock: true, selected: true, cuts: cuts([[1500, 4, 'O1 O2 nahoře/dole'], [1450, 4, 'O1 O2 boky'], [1320, 5, 'O3'], [2100, 2, 'Dveře boky'], [1000, 1, 'Dveře nahoře'], [780, 3, 'O4'], [640, 6, 'Fixy']]) },
+    { id: 'g2', profileId: 'ex-p-synego-kridlo', colorId: null, finish: 'bila', barLen: 6000, useStock: true, selected: true, cuts: cuts([[1426, 4, 'O1 O2'], [1376, 4, 'O1 O2'], [1246, 4, 'O3']]) },
+    { id: 'g3', profileId: 'ex-p-geneo-ram', colorId: 'ex-c-antracit', finish: 'dekor-bila', barLen: 6000, useStock: true, selected: false, cuts: cuts([[1180, 2, 'O5'], [980, 2, 'O5'], [600, 4, 'O6']]) }
   ] }];
   const stock = [
-    { id: 'ex-s-1', profileId: 'ex-p-synego-ram', colorId: 'ex-c-bila', len: 2350, qty: 1, source: 'Ukázka', date: d },
-    { id: 'ex-s-2', profileId: 'ex-p-synego-ram', colorId: 'ex-c-bila', len: 1100, qty: 2, source: 'Ukázka', date: d },
-    { id: 'ex-s-3', profileId: 'ex-p-synego-kridlo', colorId: 'ex-c-bila', len: 1620, qty: 1, source: 'Ukázka', date: d }
+    { id: 'ex-s-1', profileId: 'ex-p-synego-ram', colorId: null, finish: 'bila', len: 2350, qty: 1, source: 'Ukázka', date: d },
+    { id: 'ex-s-2', profileId: 'ex-p-synego-ram', colorId: null, finish: 'bila', len: 1100, qty: 2, source: 'Ukázka', date: d },
+    { id: 'ex-s-3', profileId: 'ex-p-synego-kridlo', colorId: null, finish: 'bila', len: 1620, qty: 1, source: 'Ukázka', date: d }
   ];
   for (const a of [systems, profiles, colors, jobs, stock]) a.forEach(o => o.example = true);
   return { systems, profiles, colors, jobs, stock };
@@ -823,15 +896,30 @@ function parseList(text) {
 function simpText(v) { return v <= 10 ? 'nejméně odpadu' : v <= 40 ? 'hlavně málo odpadu' : v <= 70 ? 'vyváženě' : v < 100 ? 'hlavně jednoduše' : 'nejjednodušší řezání'; }
 const curJob = () => ui.jobId && D.jobs.get(ui.jobId);
 
-function pickerHtml(ctx, kind, selId) {
+function pickerHtml(ctx, kind, selId, label) {
   const o = kind === 'profiles' ? P(selId) : C(selId);
   const open = pick && pick.ctx === ctx && pick.kind === kind;
-  const label = kind === 'profiles' ? 'Profil' : 'Barva';
+  label = label || (kind === 'profiles' ? 'Profil' : 'Barva');
   return `<div class="f-pick" style="display:grid;gap:4px;min-width:0"><span class="small muted" style="font-weight:700">${label}</span>
     <button class="pickbtn ${o ? '' : 'empty-pick'}" data-act="open-pick" data-ctx="${ctx}" data-kind="${kind}" aria-expanded="${open}">
       <b>${kind === 'colors' && o ? `<span class="sw" style="display:inline-block;vertical-align:-3px;margin-right:6px;width:16px;height:16px;background:${esc(o.hex || '#ffffff')}"></span>` : ''}${o ? esc(oName(kind, o)) : 'Vyberte…'}</b>
       <small>${o ? esc(kind === 'profiles' ? pSub(o) : cSub(o)) || '&nbsp;' : 'z katalogu'}</small>
     </button></div>`;
+}
+// color picker for the chosen finish; for "bílá" there is nothing to choose
+function colorPickHtml(ctx, o) {
+  if (needsColor(o)) return pickerHtml(ctx, 'colors', o.colorId, decorLabel(o));
+  return `<div class="f-pick" style="display:grid;gap:4px;min-width:0"><span class="small muted" style="font-weight:700">Barva</span><div class="pickbtn fixed"><b><span class="sw" style="display:inline-block;vertical-align:-3px;margin-right:6px;width:16px;height:16px;background:#fff"></span>Bílá</b><small>z obou stran</small></div></div>`;
+}
+function finishHtml(ctx, o) {
+  const f = finOf(o);
+  return `<div class="fin-row"><span class="small muted" style="font-weight:700">Provedení</span><div class="seg-ctl fin" role="group" aria-label="Provedení">${FINISHES.map(([v, l, hint]) => `<button data-act="finish" data-ctx="${ctx}" data-v="${v}" aria-pressed="${v === f}" title="${hint}">${l}</button>`).join('')}</div><span class="small muted">${FINISHES.find(x => x[0] === f)[2]}</span></div>`;
+}
+const swatchOf = o => needsColor(o) ? swatch(C(o.colorId)) : '<span class="sw" style="background:#fff"></span>';
+function ctxObj(ctx) {
+  if (ctx === 'stock') return stockForm;
+  if (ctx.startsWith('imp:')) return imp && imp.blocks[+ctx.slice(4)];
+  const j = curJob(); return j && j.groups.find(x => 'g:' + x.id === ctx);
 }
 function pickBoxHtml() {
   const kindTxt = pick.kind === 'profiles' ? 'profil' : 'barvu';
@@ -849,7 +937,7 @@ function pickListHtml() {
   const sys = pickSystem();
   const res = search(pick.kind, pick.q).filter(o => !sys || o.systemId === sys).slice(0, 40);
   const allLink = sys ? `<button class="link" data-act="pick-all">Zobrazit profily všech systémů</button>` : '';
-  const items = res.map(o => `<button class="opt" data-act="pick" data-id="${o.id}">${pick.kind === 'colors' ? swatch(o) : ''}<span>${esc(oName(pick.kind, o))} <small>${esc(pick.kind === 'profiles' ? pSub(o) : cSub(o))}</small></span></button>`).join('');
+  const items = res.map(o => `<button class="opt" data-act="pick" data-id="${o.id}">${pick.kind === 'colors' ? swatch(o) : pImg(o, 'pimg sm')}<span>${esc(oName(pick.kind, o))} <small>${esc(pick.kind === 'profiles' ? pSub(o) : cSub(o))}</small></span></button>`).join('');
   const add = pick.q.trim() ? `<button class="opt add" data-act="pick-add">+ Přidat „${esc(pick.q.trim())}“ do katalogu</button>` : '';
   return (items || `<div class="muted small" style="padding:6px">Nic nenalezeno.</div>`) + add + allLink;
 }
@@ -868,7 +956,7 @@ const views = {
         const gs = j.groups || [], cut = gs.filter(g => g.cutAt).length;
         return `<button class="card" data-act="open-job" data-id="${j.id}">
           <div class="spread"><b>${esc(j.name || 'Bez názvu')}</b><span class="small muted">${czDate(j.created)}</span></div>
-          <div class="small muted">${gs.length ? esc([jobSystems(j).join(', '), [...new Set(gs.map(g => C(g.colorId)).filter(Boolean).map(c => c.name))].join(', ')].filter(Boolean).join(' · ')) : 'Zatím bez profilů'}</div>
+          <div class="small muted">${gs.length ? esc([jobSystems(j).join(', '), [...new Set(gs.filter(g => g.colorId || g.finish).filter(hasColor).map(colorLabel))].join(', ')].filter(Boolean).join(' · ')) : 'Zatím bez profilů'}</div>
           <div class="chips"><span class="chip">${gs.length} ${pl(gs.length, 'profil', 'profily', 'profilů')}</span>${cut ? `<span class="chip ok">nařezáno ${cut} z ${gs.length}</span>` : ''}</div>
         </button>`;
       }).join('') : `<div class="panel empty">Zatím žádné zakázky. Založte první tlačítkem Nová zakázka.</div>`}`;
@@ -885,12 +973,12 @@ const views = {
     const toks = norm(q).split(/\s+/).filter(Boolean);
     const groups = new Map();
     for (const s of D.stock.values()) {
-      const k = stockKey(s.profileId, s.colorId);
-      if (!groups.has(k)) groups.set(k, { p: P(s.profileId), c: C(s.colorId), items: [] });
+      const k = s.profileId + '|' + colorKey(s);
+      if (!groups.has(k)) groups.set(k, { p: P(s.profileId), c: C(s.colorId), s, items: [] });
       groups.get(k).items.push(s);
     }
-    const list = [...groups.values()].filter(g => toks.every(t => norm([pName(g.p), pSub(g.p), cName(g.c), cSub(g.c)].join(' ')).includes(t)))
-      .sort((a, b) => (pName(a.p) + cName(a.c)).localeCompare(pName(b.p) + cName(b.c), 'cs'));
+    const list = [...groups.values()].filter(g => toks.every(t => norm([pName(g.p), pSub(g.p), colorLabel(g.s), cSub(g.c)].join(' ')).includes(t)))
+      .sort((a, b) => (pName(a.p) + colorLabel(a.s)).localeCompare(pName(b.p) + colorLabel(b.s), 'cs'));
     const total = [...D.stock.values()].reduce((a, s) => a + s.qty, 0);
     const sf = pick && pick.ctx === 'stock';
     return `
@@ -899,16 +987,17 @@ const views = {
       <input id="stock-q" value="${esc(q)}" placeholder="Hledat profil nebo barvu…" autocomplete="off">
       <p class="small muted">Zbytky od ${num(settings.threshold)} mm se sem přidají samy, když uložíte plán. V dalším plánu se použijí přednostně.</p>
       ${list.length ? list.map(g => `
-        <div style="display:grid;gap:6px"><div style="display:flex;gap:8px;align-items:center">${swatch(g.c)}<h3>${esc(pName(g.p))} · ${esc(cName(g.c))}</h3></div>
+        <div style="display:grid;gap:6px"><div style="display:flex;gap:8px;align-items:center">${pImg(g.p, 'pimg sm')}${swatchOf(g.s)}<h3>${esc(pName(g.p))} · ${esc(colorLabel(g.s))}</h3></div>
           <div class="pieces">${g.items.sort((a, b) => b.len - a.len).map(s => `<span class="piece" title="${esc(s.source)} · ${czDate(s.date)}">${num(s.len)}${s.qty > 1 ? `<span class="qty">×${s.qty}</span>` : ''}<button data-act="stock-minus" data-id="${s.id}" aria-label="Odebrat jeden kus ${num(s.len)} mm">−</button></span>`).join('')}</div>
         </div>`).join('') : `<div class="empty">${D.stock.size ? 'Nic nenalezeno.' : 'Sklad je prázdný.'}</div>`}
     </div>
     <div class="panel">
       <h3>Přidat zbytek ručně</h3>
       <div class="pickers" style="grid-template-columns:1fr 1fr">
-        ${pickerHtml('stock', 'profiles', stockForm.profileId)}${pickerHtml('stock', 'colors', stockForm.colorId)}
+        ${pickerHtml('stock', 'profiles', stockForm.profileId)}${colorPickHtml('stock', stockForm)}
         ${sf ? pickBoxHtml() : ''}
       </div>
+      ${finishHtml('stock', stockForm)}
       <div class="row">
         <label class="f">Délka mm<input id="st-len" inputmode="decimal"></label>
         <label class="f" style="flex:0 1 110px">Kusů<input id="st-qty" inputmode="numeric" value="1"></label>
@@ -944,7 +1033,7 @@ ${catTabs()}</div>
         <button class="btn primary" data-act="cat-new">${isP ? 'Nový profil' : 'Nová barva'}</button></div>
       ${edit && !edit.id && edit.kind === kind ? editForm() : ''}
       <input id="cat-q" value="${esc(q)}" placeholder="${isP ? 'Hledat podle názvu, systému, kódu nebo názvu z REF2MEN…' : 'Hledat podle názvu, kódu nebo povrchu…'}" autocomplete="off">
-      <div class="cat">${items.map(o => edit && edit.id === o.id ? editForm() : `<button class="opt" data-act="cat-edit" data-id="${o.id}">${isP ? '' : swatch(o)}<span>${esc(oName(kind, o))} <small>${esc(isP ? pSub(o) : cSub(o))}${o.aliases && o.aliases.length ? ` · ${o.aliases.length} ${pl(o.aliases.length, 'jiný název', 'jiné názvy', 'jiných názvů')}` : ''}</small></span><small>Upravit</small></button>`).join('') ||
+      <div class="cat">${items.map(o => edit && edit.id === o.id ? editForm() : `<button class="opt" data-act="cat-edit" data-id="${o.id}">${isP ? pImg(o, 'pimg sm') : swatch(o)}<span>${esc(oName(kind, o))} <small>${esc(isP ? pSub(o) : cSub(o))}${o.aliases && o.aliases.length ? ` · ${o.aliases.length} ${pl(o.aliases.length, 'jiný název', 'jiné názvy', 'jiných názvů')}` : ''}</small></span><small>Upravit</small></button>`).join('') ||
         `<div class="empty">${D[kind].size ? 'Nic nenalezeno.' : `Katalog je prázdný. ${isP ? 'Přidejte první profil' : 'Přidejte první barvu'} tlačítkem nahoře.`}</div>`}</div>
     </div>
     ${settingsPanels()}`;
@@ -1018,6 +1107,7 @@ function editForm() {
       <label class="f">Kód (RAL, dekor)<input id="e-code" value="${esc(o.code)}" placeholder="např. RAL 7016"></label>
       <label class="f">Povrch<input id="e-finish" value="${esc(o.finish)}" placeholder="např. fólie oboustranně"></label>
     </div>`}
+    ${isP && o.img ? `<div class="row" style="align-items:center">${pImg(o, 'pimg big')}<span class="small muted">Obrázek z REF2MEN</span><button class="link danger" data-act="img-del">Odebrat obrázek</button></div>` : ''}
     <label class="f">Jiné názvy z REF2MEN (doplní se samy při importu), jeden na řádek<textarea id="e-aliases" style="min-height:70px">${esc((o.aliases || []).join('\n'))}</textarea></label>
     <div class="actions"><button class="btn primary" data-act="cat-save">Uložit</button><button class="btn" data-act="cat-cancel">Zrušit</button>
       ${delBtn}</div>
@@ -1027,7 +1117,7 @@ function editForm() {
 function jobEditor(j) {
   const gs = j.groups || [];
   const sel = gs.filter(g => g.selected);
-  const ready = sel.filter(g => g.profileId && g.colorId && g.cuts.some(c => c.len > 0 && c.qty > 0));
+  const ready = sel.filter(g => g.profileId && hasColor(g) && g.cuts.some(c => c.len > 0 && c.qty > 0));
   return `
     <div><button class="link on-navy" data-act="close-job">← Všechny zakázky</button></div>
     <div class="panel accent">
@@ -1052,23 +1142,24 @@ function jobEditor(j) {
 }
 
 function groupPanel(g, gi) {
-  const p = P(g.profileId), c = C(g.colorId);
-  const avail = g.profileId && g.colorId ? stockFor(g) : [];
+  const p = P(g.profileId);
+  const avail = g.profileId && hasColor(g) ? stockFor(g) : [];
   const totalQty = g.cuts.reduce((a, x) => a + (+x.qty || 0), 0);
   const ctx = 'g:' + g.id;
   const open = pick && pick.ctx === ctx;
   return `
   <div class="panel ${g.selected ? '' : 'off'}" data-g="${g.id}">
     <div class="spread" style="flex-wrap:nowrap;align-items:flex-start">
-      <label class="ghead toggle"><input type="checkbox" data-gf="selected" ${g.selected ? 'checked' : ''} aria-label="Zahrnout do plánu"><span class="gnum">${gi + 1}</span><h3>${p ? esc(pShort(p, curJob())) : 'Nový profil'}${c ? ' · ' + esc(c.name) : ''}</h3></label>
+      <label class="ghead toggle"><input type="checkbox" data-gf="selected" ${g.selected ? 'checked' : ''} aria-label="Zahrnout do plánu"><span class="gnum">${gi + 1}</span>${pImg(p, 'pimg sm')}<h3>${p ? esc(pShort(p, curJob())) : 'Nový profil'}${hasColor(g) ? ' · ' + esc(colorLabel(g)) : ''}</h3></label>
       <button class="x" data-act="del-group" aria-label="Odebrat profil ze zakázky">×</button>
     </div>
     ${g.cutAt ? `<div class="cutflag"><b>✓ Nařezáno ${czDate(g.cutAt)}</b>${g.selected ? '<span>Znovu vybráno do plánu</span>' : '<span>Proto není vybráno pro nový plán. Zaškrtnutím ho vyberete znovu.</span>'}</div>` : g.selected ? '' : '<div class="small muted offnote">Nevybráno, do plánu se nezapočítá.</div>'}
     <div class="pickers">
-      ${pickerHtml(ctx, 'profiles', g.profileId)}${pickerHtml(ctx, 'colors', g.colorId)}
+      ${pickerHtml(ctx, 'profiles', g.profileId)}${colorPickHtml(ctx, g)}
       <label class="f barlen">Tyč mm<input inputmode="numeric" data-gf="barLen" value="${num(g.barLen)}"></label>
       ${open ? pickBoxHtml() : ''}
     </div>
+    ${finishHtml(ctx, g)}
     ${g.cuts.length ? `<div style="overflow-x:auto"><table class="cuts">
       <thead><tr><th class="c-len">Délka mm</th><th class="c-qty">Kusů</th><th>Popis</th><th class="c-x"></th></tr></thead>
       <tbody>${g.cuts.map(x => `<tr data-c="${x.id}">
@@ -1091,7 +1182,7 @@ function groupPanel(g, gi) {
       </div>
     </details>
     <label class="toggle"><input type="checkbox" data-gf="useStock" ${g.useStock ? 'checked' : ''}>
-      <span>Použít zbytky ze skladu <span class="muted small">${!g.profileId || !g.colorId ? '' : avail.length ? `(${avail.length} ${pl(avail.length, 'vhodný', 'vhodné', 'vhodných')}: ${summarizeLens(avail.map(a => a.len))})` : '(žádné vhodné)'}</span></span></label>
+      <span>Použít zbytky ze skladu <span class="muted small">${!g.profileId || !hasColor(g) ? '' : avail.length ? `(${avail.length} ${pl(avail.length, 'vhodný', 'vhodné', 'vhodných')}: ${summarizeLens(avail.map(a => a.len))})` : '(žádné vhodné)'}</span></span></label>
   </div>`;
 }
 
@@ -1109,7 +1200,7 @@ function renderSheet(r, live) {
     const ci = new Map(p.setup.map((s, i) => [s.len, i % 8 + 1]));
     const col = len => `var(--p${ci.get(len)})`;
     return `<div class="panel">
-      <div class="ghead"><span class="gnum big">${gLetter(gi)}</span><div><h2>${esc(gr.title)}</h2><div class="small muted">${esc(gr.sub)}</div></div></div>
+      <div class="ghead"><span class="gnum big">${gLetter(gi)}</span>${pImg(P(gr.group.profileId))}<div><h2>${esc(gr.title)}</h2><div class="small muted">${esc(gr.sub)}</div></div></div>
       ${p.errors.map(e => `<div class="err">${esc(e)}</div>`).join('')}
       <div class="stats">
         <div class="stat"><b>${st.newBars}</b><span>${pl(st.newBars, 'nová tyč', 'nové tyče', 'nových tyčí')} ${num(gr.barLen)} mm</span></div>
@@ -1166,7 +1257,7 @@ function go(tab) { ui.tab = tab; pick = null; edit = null; confirmKey = null; sa
 // ---- actions ----
 const gOf = el => { const j = curJob(); const id = el.closest('[data-g]')?.dataset.g; return j && j.groups.find(g => g.id === id); };
 const saveJob = () => { const j = curJob(); if (j) put('jobs', j); };
-function newGroup() { return { id: uid(), profileId: null, colorId: null, barLen: settings.barLen, useStock: true, selected: true, cuts: [] }; }
+function newGroup() { return { id: uid(), profileId: null, colorId: null, finish: 'dekor-bila', barLen: settings.barLen, useStock: true, selected: true, cuts: [] }; }
 function addCut(g) {
   const len = parseFloat(($('#add-len-' + g.id).value || '').replace(',', '.'));
   const qty = parseInt($('#add-qty-' + g.id).value || '1', 10);
@@ -1177,15 +1268,15 @@ function addCut(g) {
   saveJob(); render(); $('#add-len-' + g.id).focus();
 }
 function choose(id) {
-  const f = pick.kind === 'profiles' ? 'profileId' : 'colorId';
-  if (pick.ctx === 'stock') stockForm[f] = id;
-  else if (pick.ctx.startsWith('imp:')) imp.blocks[+pick.ctx.slice(4)][f] = id;
-  else {
-    const j = curJob(), g = j && j.groups.find(x => 'g:' + x.id === pick.ctx);
-    if (g) { g[f] = id; if (f === 'profileId' && P(id) && P(id).barLen && !g.cuts.length) g.barLen = P(id).barLen; saveJob(); }
+  const f = pick.kind === 'profiles' ? 'profileId' : 'colorId', o = ctxObj(pick.ctx);
+  if (o) {
+    o[f] = id;
+    // picking the catalog's white color simply means "bílá"
+    if (f === 'colorId' && isWhite(C(id))) { o.finish = 'bila'; o.colorId = null; }
+    if (pick.ctx.startsWith('g:')) { if (f === 'profileId' && P(id) && P(id).barLen && !o.cuts.length) o.barLen = P(id).barLen; saveJob(); }
   }
-  // after a profile, go straight on to the color if none is chosen yet
-  const next = pick.kind === 'profiles' ? (pick.ctx === 'stock' ? !stockForm.colorId : pick.ctx.startsWith('imp:') ? !imp.blocks[+pick.ctx.slice(4)].colorId : !(curJob()?.groups.find(x => 'g:' + x.id === pick.ctx) || {}).colorId) : false;
+  // after a profile, go straight on to the color if one is still needed
+  const next = pick.kind === 'profiles' && o && !hasColor(o);
   pick = next ? { ctx: pick.ctx, kind: 'colors', q: '' } : null;
   render();
   if (pick) $('#pick-q')?.focus();
@@ -1237,6 +1328,14 @@ document.addEventListener('click', e => {
       break;
     }
     case 'pdf': exportPdf(ui.result, t); break;
+    case 'finish': {
+      const o = ctxObj(t.dataset.ctx); if (!o) break;
+      o.finish = t.dataset.v; if (o.finish === 'bila') o.colorId = null;
+      if (t.dataset.ctx.startsWith('g:')) saveJob();
+      if (pick && pick.ctx === t.dataset.ctx && pick.kind === 'colors') pick = null;
+      render(); break;
+    }
+    case 'img-del': { const p = plain(P(edit.id)); delete p.img; put('profiles', p); render(); break; }
     case 'open-hist': { ui.result = plain(D.history.get(t.dataset.id)); go('sheet'); break; }
     case 'reuse': {
       const r = ui.result;
@@ -1250,9 +1349,9 @@ document.addEventListener('click', e => {
     }
     case 'stock-add': {
       const len = parseFloat(($('#st-len').value || '').replace(',', '.')), qty = parseInt($('#st-qty').value || '1', 10);
-      if (!stockForm.profileId || !stockForm.colorId) { toast('Vyberte profil a barvu'); break; }
+      if (!stockForm.profileId || !hasColor(stockForm)) { toast('Vyberte profil a barvu'); break; }
       if (!(len > 0)) { $('#st-len').focus(); break; }
-      addStock(stockForm.profileId, stockForm.colorId, len, qty > 0 ? qty : 1, 'Ručně');
+      addStock(stockForm, len, qty > 0 ? qty : 1, 'Ručně');
       render(); toast('Přidáno do skladu'); break;
     }
     case 'cat-tab': ui.catTab = t.dataset.kind; edit = null; confirmKey = null; saveUi(); render(); break;
@@ -1288,12 +1387,13 @@ document.addEventListener('click', e => {
     case 'imp-toggle': imp.blocks[+t.dataset.i].on = !imp.blocks[+t.dataset.i].on; render(); break;
     case 'imp-new-profile': {
       const b = imp.blocks[+t.dataset.i];
-      const o = { id: uid(), systemId: imp.systemId || null, name: b.ozn || b.desc || b.article, code: b.article, barLen: b.barLen || settings.barLen, aliases: [] };
+      const o = { id: uid(), systemId: imp.systemId || null, name: b.ozn || b.desc || b.article, code: b.article, barLen: b.barLen || settings.barLen, aliases: [], ...(b.img ? { img: b.img } : {}) };
       put('profiles', o); b.profileId = o.id; render(); toast('Profil založen. Systém a název můžete upravit v Katalogu.'); break;
     }
     case 'imp-new-color': {
       const b = imp.blocks[+t.dataset.i];
-      const o = { id: uid(), name: b.colorText, code: b.colorCode.replace(/\/+$/, ''), finish: '', hex: '', aliases: [] };
+      const name = b.colorText.split('/').map(x => x.trim()).find(x => x && !isWhiteText(x) && !/tesn|dicht/.test(norm(x))) || b.colorText;
+      const o = { id: uid(), name, code: b.colorCode.replace(/\/+$/, ''), finish: '', hex: '', aliases: [] };
       put('colors', o); b.colorId = o.id; render(); toast('Barva založena. Upravit ji můžete v Katalogu.'); break;
     }
     case 'imp-go': finishImport(); break;
@@ -1347,33 +1447,34 @@ function runOptimize(btn) {
   setTimeout(() => {
     const j = curJob(), st = settings;
     const o = { kerf: +st.kerf, trim: +st.trim, threshold: +st.threshold, simplicity: j.simplicity ?? 60 };
-    const groups = j.groups.filter(g => g.selected && g.profileId && g.colorId && g.cuts.some(c => c.len > 0 && c.qty > 0)).map(g => {
+    const groups = j.groups.filter(g => g.selected && g.profileId && hasColor(g) && g.cuts.some(c => c.len > 0 && c.qty > 0)).map(g => {
       const p = P(g.profileId), c = C(g.colorId);
       const plan = optimize(g.cuts, { barLen: +g.barLen || st.barLen, ...o }, g.useStock ? stockFor(g) : []);
-      return { gid: g.id, group: plain(g), title: `${pName(p)} · ${cName(c)}`, sub: [pSub(p), cSub(c)].filter(Boolean).join(' · '), barLen: +g.barLen || st.barLen, plan };
+      return { gid: g.id, group: { ...plain(g), finish: finOf(g) }, title: `${pName(p)} · ${colorLabel(g)}`, sub: [pSub(p), needsColor(g) ? cSub(c) : ''].filter(Boolean).join(' · '), barLen: +g.barLen || st.barLen, plan };
     });
     ui.result = { id: uid(), jobId: j.id, name: j.name, date: today(), simplicity: o.simplicity, settings: { kerf: o.kerf, trim: o.trim, threshold: o.threshold }, groups, savedId: null };
     go('sheet');
   }, 30);
 }
 
-function addStock(profileId, colorId, len, qty, source) {
-  const ex = [...D.stock.values()].find(s => s.profileId === profileId && s.colorId === colorId && s.len === len);
+// src: anything with profileId, colorId and finish (a job group or the stock form)
+function addStock(src, len, qty, source) {
+  const ex = [...D.stock.values()].find(s => s.profileId === src.profileId && colorKey(s) === colorKey(src) && s.len === len);
   if (ex) { ex.qty += qty; put('stock', ex); }
-  else put('stock', { id: uid(), profileId, colorId, len, qty, source, date: today() });
+  else put('stock', { id: uid(), profileId: src.profileId, colorId: needsColor(src) ? src.colorId : null, finish: finOf(src), len, qty, source, date: today() });
 }
 
 function saveResult() {
   const r = ui.result;
   let missing = 0;
   for (const gr of r.groups) {
-    const { profileId, colorId } = gr.group;
+    const g = gr.group;
     for (const b of gr.plan.bars) {
       if (b.src === 'stock') {
-        const s = (D.stock.get(b.stockId)) || [...D.stock.values()].find(x => x.profileId === profileId && x.colorId === colorId && x.len === b.len);
+        const s = (D.stock.get(b.stockId)) || [...D.stock.values()].find(x => x.profileId === g.profileId && colorKey(x) === colorKey(g) && x.len === b.len);
         if (s) { if (s.qty > 1) { s.qty--; put('stock', s); } else del('stock', s.id); } else missing++;
       }
-      if (b.keep) addStock(profileId, colorId, b.leftover, 1, r.name || 'Bez názvu');
+      if (b.keep) addStock(g, b.leftover, 1, r.name || 'Bez názvu');
     }
   }
   r.savedId = r.id;
@@ -1397,16 +1498,26 @@ function matchProfile(b) {
     [...D.profiles.values()].find(p => (p.aliases || []).some(a => keys.includes(norm(a))));
 }
 function matchColor(b) { return [...D.colors.values()].find(c => hasAlias(c.aliases, colorAlias(b))); }
+// REF2MEN color text like "bílá", "Zlatý dub/bílá", "bílá/šedé těsnění": guess the finish, unless one was confirmed before
+function guessFinish(b) {
+  const known = (settings.finishMap || {})[norm(colorAlias(b))];
+  if (known) return known;
+  const parts = b.colorText.split('/').map(s => s.trim()).filter(s => s && !/tesn|dicht/.test(norm(s)));
+  if (parts.length >= 2) return isWhiteText(parts[0]) ? (isWhiteText(parts[1]) ? 'bila' : 'bila-dekor') : (isWhiteText(parts[1]) ? 'dekor-bila' : 'dekor');
+  if (!parts.length || isWhiteText(parts[0])) return 'bila';
+  const codes = b.colorCode.split('/').map(s => s.trim()).filter(Boolean);
+  return codes.length >= 2 && codes[0] !== codes[1] ? 'dekor-bila' : 'dekor';
+}
 
 async function startImport(file, jobId) {
   toast('Čtu PDF…');
   let parsed;
-  try { parsed = parseRef2men(await pdfLines(file)); }
+  try { const lines = await pdfLines(file); parsed = parseRef2men(lines); await pdfProfileImages(lines, parsed.blocks); }
   catch (e) { toast('PDF se nepodařilo přečíst: ' + (e.message || e)); return; }
   if (!parsed.blocks.length) { toast('V PDF jsem nenašel žádné řezy. Je to Seznam řezů z REF2MEN?'); return; }
   imp = { file: file.name, order: parsed.order, customer: parsed.customer, jobId, blocks: parsed.blocks.map(b => {
-    const p = matchProfile(b), c = matchColor(b);
-    return { ...b, on: !!p, profileId: p ? p.id : null, colorId: c ? c.id : null, auto: { p: !!p, c: !!c } };
+    const p = matchProfile(b), finish = guessFinish(b), c = finish === 'bila' ? null : matchColor(b);
+    return { ...b, on: !!p, profileId: p ? p.id : null, colorId: c ? c.id : null, finish, auto: { p: !!p, c: !!c } };
   }) };
   // recognized profiles first; the rest (often small door parts) start unticked at the bottom
   imp.blocks.sort((x, y) => (y.auto.p - x.auto.p));
@@ -1420,7 +1531,7 @@ async function startImport(file, jobId) {
 
 function importView() {
   const on = imp.blocks.filter(b => b.on);
-  const missing = on.filter(b => !b.profileId || !b.colorId).length;
+  const missing = on.filter(b => !b.profileId || !hasColor(b)).length;
   const target = imp.jobId && D.jobs.get(imp.jobId);
   const pieces = on.reduce((a, b) => a + b.cuts.length, 0);
   return `
@@ -1445,19 +1556,20 @@ function impBlocks(recognized) {
   return imp.blocks.map((b, i) => [b, i]).filter(([b]) => b.auto.p === recognized).map(([b, i]) => {
     const ctx = 'imp:' + i, open = pick && pick.ctx === ctx;
     const n = b.cuts.length;
-    const head = `<label class="ghead toggle"><input type="checkbox" data-act="imp-toggle" data-i="${i}" ${b.on ? 'checked' : ''} aria-label="Importovat tento artikl"><span class="gnum">${i + 1}</span><h3 style="font-size:${recognized || b.on ? 21 : 18}px">${esc(recognized ? pShort(P(b.profileId), imp) : b.ozn)} <span class="muted small">art. ${esc(b.article)}${recognized ? '' : ` · ${esc(b.colorText)} · ${n} ${pl(n, 'kus', 'kusy', 'kusů')}`}</span></h3></label>`;
+    const head = `<label class="ghead toggle"><input type="checkbox" data-act="imp-toggle" data-i="${i}" ${b.on ? 'checked' : ''} aria-label="Importovat tento artikl"><span class="gnum">${i + 1}</span>${b.img ? `<img class="pimg sm" src="${esc(b.img)}" alt="">` : ''}<h3 style="font-size:${recognized || b.on ? 21 : 18}px">${esc(recognized ? pShort(P(b.profileId), imp) : b.ozn)} <span class="muted small">art. ${esc(b.article)}${recognized ? '' : ` · ${esc(b.colorText)} · ${n} ${pl(n, 'kus', 'kusy', 'kusů')}`}</span></h3></label>`;
     if (!recognized && !b.on) return `<div class="imp-row">${head}</div>`;
     const lens = new Map(); b.cuts.forEach(c => lens.set(c.len, (lens.get(c.len) || 0) + 1));
     const body = `
       <div class="small muted">V PDF: ${esc(b.ozn)} · ${esc(b.desc)} · barva ${esc(b.colorText)} ${esc(b.colorCode)} · tyč ${num(b.barLen || settings.barLen)} mm</div>
       <div class="chips">${[...lens.entries()].sort((x, y) => y[0] - x[0]).map(([l, k]) => `<span class="chip">${k}× ${num(l)}</span>`).join('')}</div>
       ${b.on ? `<div class="pickers" style="grid-template-columns:1fr 1fr">
-        ${pickerHtml(ctx, 'profiles', b.profileId)}${pickerHtml(ctx, 'colors', b.colorId)}
+        ${pickerHtml(ctx, 'profiles', b.profileId)}${colorPickHtml(ctx, b)}
         ${open ? pickBoxHtml() : ''}
       </div>
+      ${finishHtml(ctx, b)}
       <div class="actions">
         ${b.profileId ? (b.auto.p && b.profileId === (matchProfile(b) || {}).id ? '<span class="chip ok">profil rozpoznán</span>' : '') : `<button class="btn" data-act="imp-new-profile" data-i="${i}">Založit profil „${esc(b.ozn)}“</button>`}
-        ${b.colorId ? (b.auto.c && b.colorId === (matchColor(b) || {}).id ? '<span class="chip ok">barva rozpoznána</span>' : '') : `<button class="btn" data-act="imp-new-color" data-i="${i}">Založit barvu „${esc(b.colorText)}“</button>`}
+        ${!needsColor(b) ? '' : b.colorId ? (b.auto.c && b.colorId === (matchColor(b) || {}).id ? '<span class="chip ok">barva rozpoznána</span>' : '') : `<button class="btn" data-act="imp-new-color" data-i="${i}">Založit barvu „${esc(b.colorText)}“</button>`}
       </div>` : ''}`;
     return recognized ? `<div class="panel ${b.on ? '' : 'off'}">${head}${body}</div>` : `<div class="imp-row open">${head}${body}</div>`;
   }).join('');
@@ -1465,22 +1577,28 @@ function impBlocks(recognized) {
 
 function finishImport() {
   const groups = [];
-  for (const b of imp.blocks.filter(b => b.on && b.profileId && b.colorId)) {
+  const finishMap = { ...(settings.finishMap || {}) };
+  for (const b of imp.blocks.filter(b => b.on && b.profileId && hasColor(b))) {
     // remember the PDF names so the next import matches on its own
     const p = { ...P(b.profileId), aliases: [...(P(b.profileId).aliases || [])] };
     let changed = false;
     if (!p.code) { p.code = b.article; changed = true; }
+    if (b.img && !p.img) { p.img = b.img; changed = true; }
     for (const s of [b.article, b.ozn, b.desc]) if (s && norm(s) !== norm(p.code) && !hasAlias(p.aliases, s)) { p.aliases.push(s); changed = true; }
     if (changed) put('profiles', p);
-    const c = { ...C(b.colorId), aliases: [...(C(b.colorId).aliases || [])] };
-    if (!hasAlias(c.aliases, colorAlias(b))) { c.aliases.push(colorAlias(b)); put('colors', c); }
+    if (needsColor(b)) {
+      const c = { ...C(b.colorId), aliases: [...(C(b.colorId).aliases || [])] };
+      if (!hasAlias(c.aliases, colorAlias(b))) { c.aliases.push(colorAlias(b)); put('colors', c); }
+    }
+    finishMap[norm(colorAlias(b))] = b.finish;
     const cuts = new Map();
     for (const x of b.cuts) {
       const k = x.len + '|' + x.label;
       if (cuts.has(k)) cuts.get(k).qty++; else cuts.set(k, { id: uid(), len: x.len, qty: 1, label: x.label });
     }
-    groups.push({ id: uid(), profileId: b.profileId, colorId: b.colorId, barLen: b.barLen || p.barLen || settings.barLen, useStock: true, selected: true, cuts: [...cuts.values()] });
+    groups.push({ id: uid(), profileId: b.profileId, colorId: needsColor(b) ? b.colorId : null, finish: b.finish, barLen: b.barLen || p.barLen || settings.barLen, useStock: true, selected: true, cuts: [...cuts.values()] });
   }
+  if (JSON.stringify(finishMap) !== JSON.stringify(settings.finishMap || {})) { settings.finishMap = finishMap; putSettings(); }
   let j = imp.jobId && D.jobs.get(imp.jobId);
   if (j) { j = plain(j); j.groups = (j.groups || []).filter(g => g.profileId || g.cuts.length).concat(groups); if (!j.systemId) j.systemId = imp.systemId || null; }
   else j = { id: uid(), name: [imp.order, imp.customer].filter(Boolean).join(' '), created: today(), simplicity: 60, systemId: imp.systemId || null, groups };
