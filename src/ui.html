@@ -168,9 +168,14 @@ section.view > .spread .btn:hover, section.view > .actions .btn:hover, .go .btn:
 .src { font-size: 20px; font-weight: 700; }
 .src.stock { color: var(--indigo); }
 .bar { display: flex; height: 38px; overflow: hidden; background: var(--paper); border: 2px solid var(--navy); }
-.seg { position: relative; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 15px; overflow: hidden; white-space: nowrap; border-right: 2px solid var(--paper); min-width: 0; text-shadow: 0 0 2px rgba(0,0,0,.8), 0 0 4px rgba(0,0,0,.5); }
-.seg .ang { position: absolute; top: 1px; font-size: 11px; line-height: 1; padding: 1px 2px; background: #fff; color: var(--red-ink); font-weight: 800; }
-.seg .ang.l { left: 1px; } .seg .ang.r { right: 1px; }
+.segw { display: flex; min-width: 0; filter: drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000); }
+.segw .seg { flex: 1; }
+.seg { position: relative; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 15px; overflow: hidden; white-space: nowrap; min-width: 0; text-shadow: 0 0 2px rgba(0,0,0,.6); }
+.seg .ang { position: absolute; top: 50%; transform: translateY(-50%); font-size: 11px; line-height: 1; padding: 2px 3px; background: #fff; color: var(--red-ink); font-weight: 800; text-shadow: none; }
+.seg .ang.l { left: 2px; } .seg .ang.r { right: 2px; }
+/* a short piece shows only its length; the angle is in the list below the bar */
+.segw .seg { container-type: inline-size; }
+@container (max-width: 84px) { .seg .ang { display: none; } }
 .seg.left { text-shadow: none; color: var(--muted); border-right: 0; background: repeating-linear-gradient(135deg, var(--paper) 0 6px, #e1e0ea 6px 9px); }
 .seg.left.keep { background: repeating-linear-gradient(135deg, var(--soft) 0 6px, var(--peri) 6px 9px); color: var(--indigo); }
 .cl { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }

@@ -82,18 +82,16 @@ function pdfBlocks(r, ctx, imgs = []) {
           const w = g.len / total * bw, [a1, a2] = angOf(g), sl = a => a === 45 ? Math.min(bh, w * 0.45) : 0, s1 = sl(a1), s2 = sl(a2);
           c.fillStyle = '#fff'; c.fillRect(x, by, w, bh);
           c.fillStyle = pat(g); c.beginPath(); c.moveTo(x, by); c.lineTo(x + w, by); c.lineTo(x + w - s2, by + bh); c.lineTo(x + s1, by + bh); c.closePath(); c.fill();
-          for (const [col, lw] of [['#fff', 1.6], ['#000', 0.7]]) {   // white halo keeps the cut line visible on any pattern
-            c.strokeStyle = col; c.lineWidth = lw; c.beginPath();
-            if (s1) { c.moveTo(x, by); c.lineTo(x + s1, by + bh); }
-            c.moveTo(x + w, by); c.lineTo(x + w - s2, by + bh); c.stroke();
-          }
+          c.strokeStyle = '#000'; c.lineWidth = 0.5; c.lineJoin = 'miter'; c.stroke();   // black outline on every edge of the piece
           // the length in black with a thick white outline, so it reads on any pattern without covering it
           font(800, 4.4); const tw = c.measureText(num(g.len)).width;
           if (tw + 1 < w) { c.textAlign = 'center'; c.textBaseline = 'alphabetic'; c.lineJoin = 'round'; c.strokeStyle = '#fff'; c.lineWidth = 1.3; c.strokeText(num(g.len), x + w / 2, by + bh / 2 + 1.5); text(num(g.len), x + w / 2, by + bh / 2 + 1.5, 800, 4.4, '#000', 'center'); }
-          for (const [a, left] of [[a1, true], [a2, false]]) if (oddAng(a)) {
+          // angle tags at the ends only where they fit beside the length; the cut list always names them
+          font(800, 2.6); const tagW = [a1, a2].filter(oddAng).reduce((t, a) => t + c.measureText(num(a) + '°').width + 2, 0);
+          if (tw + 2 * tagW + 2 < w) for (const [a, left] of [[a1, true], [a2, false]]) if (oddAng(a)) {
             const lab = num(a) + '°'; font(800, 2.6); const lw = c.measureText(lab).width + 1;
-            const lx = left ? x + 0.3 : x + w - lw - 0.3;
-            c.fillStyle = '#000'; c.fillRect(lx, by + 0.3, lw, 3); text(lab, lx + lw / 2, by + 2.6, 800, 2.6, '#fff', 'center');
+            const lx = left ? x + 0.6 : x + w - lw - 0.6, ly = by + bh / 2 - 1.5;
+            c.fillStyle = '#000'; c.fillRect(lx, ly, lw, 3); text(lab, lx + lw / 2, ly + 2.3, 800, 2.6, '#fff', 'center');
           }
           x += w;
         }

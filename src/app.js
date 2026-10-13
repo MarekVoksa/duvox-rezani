@@ -761,7 +761,8 @@ function renderSheet(r, live) {
 function segHtml(g, bg) {
   // the bar is 34 px tall inside, so a 34 px slant is a true 45°; very short pieces get what fits. Long side on top, as cut seen from the front.
   const [a1, a2] = angOf(g), sl = a => a === 45 ? 'min(34px, 45%)' : '0px';
-  return `<div class="seg" style="flex:${g.len} 1 0;background:${bg};clip-path:polygon(0 0, 100% 0, calc(100% - ${sl(a2)}) 100%, ${sl(a1)} 100%)">${oddAng(a1) ? `<span class="ang l">${num(a1)}°</span>` : ''}${num(g.len)}${oddAng(a2) ? `<span class="ang r">${num(a2)}°</span>` : ''}</div>`;
+  // the outer box draws a thin black outline around the cut shape (incl. slanted ends)
+  return `<div class="segw" style="flex:${g.len} 1 0"><div class="seg" style="background:${bg};clip-path:polygon(0 0, 100% 0, calc(100% - ${sl(a2)}) 100%, ${sl(a1)} 100%)">${oddAng(a1) ? `<span class="ang l">${num(a1)}°</span>` : ''}${num(g.len)}${oddAng(a2) ? `<span class="ang r">${num(a2)}°</span>` : ''}</div></div>`;
 }
 const gLetter = i => (i >= 26 ? String.fromCharCode(64 + Math.floor(i / 26)) : '') + String.fromCharCode(65 + i % 26);
 function labelSummary(labels) {
