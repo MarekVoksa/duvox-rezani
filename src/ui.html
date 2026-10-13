@@ -114,15 +114,23 @@ button.x:hover { color: var(--red-ink); }
 .seg-ctl.fin button { font-size: 16px; padding: 6px 11px; }
 .pickbtn.fixed, .pickbtn.fixed:hover { cursor: default; border-color: var(--line); }
 .sw { width: 22px; height: 22px; flex: none; border: 1px solid rgba(4,4,89,.3); }
+.sw3 { display: inline-flex; flex-direction: column; vertical-align: -4px; margin-right: 6px; }
+.sw3 i { flex: 1; } .sw3 i:nth-child(2) { flex: .8; border-top: 1px solid rgba(4,4,89,.25); border-bottom: 1px solid rgba(4,4,89,.25); }
+.fin3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.fin-new summary { cursor: pointer; font-weight: 700; color: var(--indigo); padding: 4px 0; }
+.fin-new[open] { display: grid; gap: 8px; }
+.shape { display: inline-flex; align-items: center; gap: 3px; color: var(--navy); align-self: center; }
+.shape small { font-size: 13px; font-weight: 700; color: var(--red-ink); }
 .cuts { width: 100%; border-collapse: collapse; }
 .cuts th { text-align: left; font-size: 15px; color: var(--muted); font-weight: 700; padding: 4px 6px; border-bottom: 2px solid var(--line); }
 .cuts td { padding: 2px 3px; border-bottom: 1px solid var(--line); }
 .cuts td input { padding: 6px 7px; background: transparent; border-color: transparent; }
 .cuts td input:hover { border-color: var(--line); }
-.cuts .c-len { width: 32%; } .cuts .c-qty { width: 18%; } .cuts .c-x { width: 44px; text-align: right; }
+.cuts .c-len { width: 26%; } .cuts .c-qty { width: 15%; } .cuts .c-ang { width: 17%; }
+.cuts td input.odd, .addrow input.odd { color: var(--red-ink); font-weight: 700; } .cuts .c-x { width: 44px; text-align: right; }
 .cuts td input.len { font-weight: 700; font-size: 20px; }
-.addrow { display: grid; grid-template-columns: 1.3fr .8fr 1.6fr auto; gap: 8px; }
-@media (max-width: 500px) { .addrow { grid-template-columns: 1fr 1fr; } .addrow .lbl, .addrow button { grid-column: 1 / -1; } }
+.addrow { display: grid; grid-template-columns: 1.2fr .7fr .8fr 1.5fr auto; gap: 8px; }
+@media (max-width: 500px) { .addrow { grid-template-columns: 1.3fr 1fr 1fr; } .addrow .lbl, .addrow button { grid-column: 1 / -1; } }
 details summary { cursor: pointer; color: var(--indigo); font-weight: 700; }
 .slider { display: grid; gap: 4px; }
 .slider input[type=range] { padding: 0; border: 0; background: none; accent-color: var(--red); }
@@ -158,11 +166,13 @@ section.view > .spread .btn:hover, section.view > .actions .btn:hover, .go .btn:
 .src { font-size: 20px; font-weight: 700; }
 .src.stock { color: var(--indigo); }
 .bar { display: flex; height: 38px; overflow: hidden; background: var(--paper); border: 2px solid var(--navy); }
-.seg { display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 15px; overflow: hidden; white-space: nowrap; border-right: 2px solid var(--paper); min-width: 0; }
+.seg { position: relative; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 15px; overflow: hidden; white-space: nowrap; border-right: 2px solid var(--paper); min-width: 0; }
+.seg .ang { position: absolute; top: 1px; font-size: 11px; line-height: 1; padding: 1px 2px; background: #fff; color: var(--red-ink); font-weight: 800; }
+.seg .ang.l { left: 1px; } .seg .ang.r { right: 1px; }
 .seg.left { color: var(--muted); border-right: 0; background: repeating-linear-gradient(135deg, var(--paper) 0 6px, #e1e0ea 6px 9px); }
 .seg.left.keep { background: repeating-linear-gradient(135deg, var(--soft) 0 6px, var(--peri) 6px 9px); color: var(--indigo); }
 .cl { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.cl li { display: grid; grid-template-columns: 14px 3.6ch auto 1fr; gap: 10px; align-items: baseline; }
+.cl li { display: grid; grid-template-columns: 14px 3.6ch auto auto 1fr; gap: 10px; align-items: baseline; }
 .cl .dot { width: 14px; height: 14px; align-self: center; }
 .cl .q { font-size: 24px; font-weight: 800; text-align: right; }
 .cl .l { font-size: 26px; font-weight: 800; }
@@ -196,7 +206,7 @@ section.view > .spread .btn:hover, section.view > .actions .btn:hover, .go .btn:
   <div class="brand"><svg viewBox="75 101 875 822" aria-hidden="true"><path fill="currentColor" d="M808.18,184.57c-14.72-10.99-30.63-21.1-47.790-30.3c-65.73-35.21-152.12-52.8-259.16-52.8H75.88v83.1H180.1 v654.92H75.88v83.1h428.16c107.06,0,192.96-17.36,257.74-52.11c17.86-9.57,34.36-20.2,49.58-31.81l-515.76,0.83V184.57H808.18z"/><path fill="currentColor" d="M456.23,651.78l-70.23,93.44h507.83c3.58-6.23,7.01-12.58,10.21-19.11c11.420-23.38,20.66-48.17,27.74-74.33 H456.23z"/><path fill="currentColor" d="M386.01,558.75h561.38c1.14-14.98,1.72-30.31,1.72-46.02c0-16.2-0.63-31.99-1.84-47.42H456.23L386.01,558.75z"/><path fill="currentColor" d="M386.01,371.46h545.16c-7-25.35-16.03-49.39-27.12-72.11c-3.57-7.3-7.41-14.4-11.48-21.33H456.23L386.01,371.46 z"/></svg>DUVOX <span>řezání</span></div>
   <nav class="tabs" id="tabs">
     <button data-tab="jobs"><span>Zakázky</span></button>
-    <button data-tab="sheet"><span>Plán</span></button>
+    <button data-tab="sheet"><span>Optimalizace</span></button>
     <button data-tab="stock"><span>Sklad<i class="n" id="n-stock"></i></span></button>
     <button data-tab="history"><span>Historie</span></button>
     <button data-tab="catalog"><span>Katalog</span></button>

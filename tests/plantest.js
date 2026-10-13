@@ -10,7 +10,7 @@ const { chromium } = require('playwright'), fs = require('fs'), path = require('
   await p.goto('http://t/'); await p.waitForTimeout(800);
   // second job: same frame profile in white, different lengths
   await p.evaluate(() => {
-    const g = { id: uid(), profileId: 'ex-p-synego-ram', colorId: null, finish: 'bila', barLen: 6000, useStock: true, selected: true, cuts: [{ id: uid(), len: 1200, qty: 3, label: 'O9' }] };
+    const g = { id: uid(), profileId: 'ex-p-synego-ram', finishId: [...D.finishes.values()].find(f => f.inside === f.outside && f.inside === f.core).id, barLen: 6000, useStock: true, selected: true, cuts: [{ id: uid(), len: 1200, qty: 3, label: 'O9' }] };
     put('jobs', { id: 'job2', name: '2610001 Novák', created: today(), simplicity: 60, groups: [g] });
   });
   await p.click('#tabs [data-tab=sheet]'); await p.waitForTimeout(200);

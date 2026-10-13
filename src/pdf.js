@@ -23,6 +23,19 @@ function printPattern(ctx, i) {
   const p = ctx.createPattern(c, 'repeat'); p.setTransform(new DOMMatrix().scale(1 / MM)); return p;
 }
 
+// piece outline next to a length in the cut list: slanted 45° ends, square 90°, other angles written in
+function pdfShape(c, x, y, g) {
+  const [a1, a2] = angOf(g), w = 11, h = 3.2, sl = a => a === 45 ? 2.2 : 0;
+  c.font = `800 2.6px ${PFONT}`; c.textBaseline = 'alphabetic';
+  let x0 = x;
+  if (oddAng(a1)) { c.fillStyle = '#000'; c.textAlign = 'left'; c.fillText(num(a1) + '°', x0, y + 2.6); x0 += c.measureText(num(a1) + '°').width + 0.8; }
+  c.fillStyle = '#e6e6e6'; c.strokeStyle = '#000'; c.lineWidth = 0.3;
+  c.beginPath(); c.moveTo(x0 + sl(a1), y); c.lineTo(x0 + w - sl(a2), y); c.lineTo(x0 + w, y + h); c.lineTo(x0, y + h); c.closePath(); c.fill(); c.stroke();
+  let end = x0 + w;
+  if (oddAng(a2)) { c.fillStyle = '#000'; c.textAlign = 'left'; c.fillText(num(a2) + '°', end + 0.8, y + 2.6); end += c.measureText(num(a2) + '°').width + 0.8; }
+  return end;
+}
+
 // Build a list of blocks {h, draw(ctx, y), keepNext}; pages are filled top to bottom without splitting a block.
 function pdfBlocks(r, ctx, imgs = []) {
   const B = [], font = (w, mm) => { ctx.font = `${w} ${mm}px ${PFONT}`; };
@@ -36,8 +49,8 @@ function pdfBlocks(r, ctx, imgs = []) {
   } });
   r.groups.forEach((gr, gi) => {
     const p = gr.plan, s = p.stats, L = gLetter(gi);
-    const ci = new Map((p.setup || []).map((x, i) => [x.len, i]));
-    const pat = len => printPattern(ctx, ci.get(len) ?? 0);
+    const ci = new Map((p.setup || []).map((x, i) => [x.item ?? x.len, i]));
+    const pat = g => printPattern(ctx, ci.get(g.item ?? g.len) ?? 0);
     const summary = s ? [`${s.newBars}× nová tyč ${num(gr.barLen)} mm`, s.stockUsed.length ? `${s.stockUsed.length}× zbytek ze skladu` : '', s.kept.length ? `${s.kept.length}× zbytek do skladu` : '',
       `odpad ${num((s.material ? (s.material - s.piecesLen - s.kept.reduce((a, b) => a + b, 0)) / s.material * 100 : 0).toFixed(1))} %`].filter(Boolean).join(' · ') : '';
     const im = imgs[gi], iw = im ? Math.min(14, 11 * im.naturalWidth / im.naturalHeight) : 0, tx = im ? 14 + iw + 2.5 : 14;
@@ -51,7 +64,7 @@ function pdfBlocks(r, ctx, imgs = []) {
     for (const e of p.errors || []) B.push({ h: 5, draw: (c, y) => text('! ' + e, 0, y + 3.8, 700, 3.4, '#b00') });
     if (!s) return;
     p.patterns.forEach((pt, pi) => {
-      const items = pt.groups.map(g => ({ g, lines: wrap(labelSummary(g.labels), 400, 3.1, CW - 36) }));
+      const items = pt.groups.map(g => ({ g, lines: wrap(labelSummary(g.labels), 400, 3.1, CW - 50) }));
       const h = 15.6 + items.reduce((a, it) => a + Math.max(1, it.lines.length) * 4.8, 0) + 2;
       B.push({ h, draw: (c, y) => {
         c.strokeStyle = '#000'; c.lineWidth = 0.35; c.strokeRect(0.2, y + 1.2, 3.6, 3.6);      // tick box
@@ -61,14 +74,25 @@ function pdfBlocks(r, ctx, imgs = []) {
         text(pt.keep ? `Zbytek ${num(pt.leftover)} mm do skladu` : pt.leftover > 0 ? `Odpad ${num(pt.leftover)} mm` : 'Bez zbytku', CW, y + 4.6, 700, 3.5, pt.keep ? '#000' : '#555', 'right');
         // bar drawing
         const bx = 6, bw = CW - 6, by = y + 6.6, bh = 7.2;
-        const segs = pt.groups.flatMap(g => Array(g.n).fill(g.len)), total = segs.reduce((a, b) => a + b, 0) + Math.max(pt.leftover, 0);
+        const segs = pt.groups.flatMap(g => Array(g.n).fill(g)), total = segs.reduce((a, g) => a + g.len, 0) + Math.max(pt.leftover, 0);
         let x = bx;
-        for (const len of segs) {
-          const w = len / total * bw;
-          c.fillStyle = pat(len); c.fillRect(x, by, w, bh);
-          font(800, 4.4); const tw = c.measureText(num(len)).width;
-          if (tw + 2 < w) { c.fillStyle = '#fff'; c.fillRect(x + w / 2 - tw / 2 - 0.8, by + bh / 2 - 2.5, tw + 1.6, 5); text(num(len), x + w / 2, by + bh / 2 + 1.5, 800, 4.4, '#000', 'center'); }
-          for (const [col, lw] of [['#fff', 1.6], ['#000', 0.7]]) { c.strokeStyle = col; c.lineWidth = lw; c.beginPath(); c.moveTo(x + w, by); c.lineTo(x + w, by + bh); c.stroke(); }  // white halo keeps the divider visible on any pattern
+        for (const g of segs) {
+          const w = g.len / total * bw, [a1, a2] = angOf(g), sl = a => a === 45 ? Math.min(2.6, w / 4) : 0, s1 = sl(a1), s2 = sl(a2);
+          // 45° ends slanted, 90° square; other angles square with the angle written at that end
+          c.fillStyle = '#fff'; c.fillRect(x, by, w, bh);
+          c.fillStyle = pat(g); c.beginPath(); c.moveTo(x + s1, by); c.lineTo(x + w - s2, by); c.lineTo(x + w, by + bh); c.lineTo(x, by + bh); c.closePath(); c.fill();
+          font(800, 4.4); const tw = c.measureText(num(g.len)).width;
+          if (tw + 2 < w) { c.fillStyle = '#fff'; c.fillRect(x + w / 2 - tw / 2 - 0.8, by + bh / 2 - 2.5, tw + 1.6, 5); text(num(g.len), x + w / 2, by + bh / 2 + 1.5, 800, 4.4, '#000', 'center'); }
+          for (const [col, lw] of [['#fff', 1.6], ['#000', 0.7]]) {   // white halo keeps the cut line visible on any pattern
+            c.strokeStyle = col; c.lineWidth = lw; c.beginPath();
+            if (s1) { c.moveTo(x, by + bh); c.lineTo(x + s1, by); }
+            c.moveTo(x + w - s2, by); c.lineTo(x + w, by + bh); c.stroke();
+          }
+          for (const [a, left] of [[a1, true], [a2, false]]) if (oddAng(a)) {
+            const lab = num(a) + '°'; font(800, 2.6); const lw = c.measureText(lab).width + 1;
+            const lx = left ? x + 0.3 : x + w - lw - 0.3;
+            c.fillStyle = '#000'; c.fillRect(lx, by + 0.3, lw, 3); text(lab, lx + lw / 2, by + 2.6, 800, 2.6, '#fff', 'center');
+          }
           x += w;
         }
         if (pt.leftover > 0) {
@@ -81,10 +105,11 @@ function pdfBlocks(r, ctx, imgs = []) {
         // cut list
         let ly = by + bh + 4.8;
         for (const it of items) {
-          c.fillStyle = pat(it.g.len); c.fillRect(6, ly - 3.4, 3.8, 3.8); c.strokeStyle = '#000'; c.lineWidth = 0.25; c.strokeRect(6, ly - 3.4, 3.8, 3.8);
+          c.fillStyle = pat(it.g); c.fillRect(6, ly - 3.4, 3.8, 3.8); c.strokeStyle = '#000'; c.lineWidth = 0.25; c.strokeRect(6, ly - 3.4, 3.8, 3.8);
           text(`${it.g.n}×`, 18.5, ly, 800, 4.6, '#000', 'right');
           text(num(it.g.len), 20, ly, 800, 4.6);
-          (it.lines.length ? it.lines : ['']).forEach((ln, k) => text(ln, 36, ly + k * 4.8, 400, 3.1, '#333'));
+          const lx = Math.max(50, pdfShape(c, 34, ly - 3.2, it.g) + 2);
+          (it.lines.length ? it.lines : ['']).forEach((ln, k) => text(ln, lx, ly + k * 4.8, 400, 3.1, '#333'));
           ly += Math.max(1, it.lines.length) * 4.8;
         }
         c.strokeStyle = '#bbb'; c.lineWidth = 0.2; c.beginPath(); c.moveTo(0, y + h - 0.6); c.lineTo(CW, y + h - 0.6); c.stroke();
@@ -94,9 +119,9 @@ function pdfBlocks(r, ctx, imgs = []) {
       text('Celkem:', 0, y + 4.6, 700, 3.4);
       let x = 14;
       for (const t of p.setup) {
-        const lab = `${t.qty}× ${num(t.len)}`; font(700, 3.4); const w = c.measureText(lab).width;
+        const lab = `${t.qty}× ${num(t.len)}${angOf(t).join() !== '45,45' ? ` (${angTxt(t)}°)` : ''}`; font(700, 3.4); const w = c.measureText(lab).width;
         if (x + w + 6 > CW) break;
-        c.fillStyle = pat(t.len); c.fillRect(x, y + 1.9, 3.2, 3.2); c.strokeStyle = '#000'; c.lineWidth = 0.25; c.strokeRect(x, y + 1.9, 3.2, 3.2);
+        c.fillStyle = pat(t); c.fillRect(x, y + 1.9, 3.2, 3.2); c.strokeStyle = '#000'; c.lineWidth = 0.25; c.strokeRect(x, y + 1.9, 3.2, 3.2);
         text(lab, x + 4.4, y + 4.6, 700, 3.4); x += w + 9;
       }
     } });

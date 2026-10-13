@@ -4,10 +4,10 @@
 // leftover gives part of its length back.
 const KEEP_VALUE = 0.3;
 
-function genPatterns(cap, lens, cnt, kerf) {
-  // Returns arrays of counts (one per length) that fit in cap.
-  // Each piece consumes len + kerf; the last cut needs no kerf, hence C = cap + kerf.
-  const C = cap + kerf, d = lens.length, w = lens.map(l => l + kerf);
+function genPatterns(cap, lens, cnt, kf) {
+  // Returns arrays of counts (one per item) that fit in cap.
+  // Each piece consumes len + its kerf (wider for angled cuts); the last cut needs no kerf, hence C = cap + kerf.
+  const d = lens.length, w = lens.map((l, i) => l + kf[i]), C = cap + Math.max(0, ...kf);
   const out = new Map();
   const add = c => { const k = c.join(','); if (!out.has(k)) out.set(k, c.slice()); };
   const zero = () => new Array(d).fill(0);
@@ -55,7 +55,7 @@ function genPatterns(cap, lens, cnt, kerf) {
   return [...out.values()];
 }
 
-function runGreedy(lens, demand, o, remnants, lam) {
+function runGreedy(lens, demand, o, remnants, lam, kf) {
   const cnt = demand.slice();
   const rems = remnants.map(r => ({ len: r.len, avail: r.ids.length, ids: r.ids.slice() }));
   const bars = [];
@@ -67,9 +67,9 @@ function runGreedy(lens, demand, o, remnants, lam) {
     for (const opt of options) {
       const cap = opt.len - (opt.src === 'new' ? o.trim : o.trim / 2);
       if (cap <= 0) continue;
-      for (const c of genPatterns(cap, lens, cnt, o.kerf)) {
+      for (const c of genPatterns(cap, lens, cnt, kf)) {
         let pieces = 0, used = 0, distinct = 0, n = 0;
-        for (let i = 0; i < c.length; i++) if (c[i]) { pieces += c[i] * lens[i]; used += c[i] * (lens[i] + o.kerf); distinct++; n += c[i]; }
+        for (let i = 0; i < c.length; i++) if (c[i]) { pieces += c[i] * lens[i]; used += c[i] * (lens[i] + kf[i]); distinct++; n += c[i]; }
         const leftover = Math.max(0, cap - used);
         const keep = leftover >= o.threshold ? leftover : 0;
         const cost = opt.value - pieces - KEEP_VALUE * keep + lam * o.barLen * (distinct - 1);
@@ -78,10 +78,10 @@ function runGreedy(lens, demand, o, remnants, lam) {
     }
     if (!best) break;
     const pieces = [];
-    best.c.forEach((k, i) => { for (let t = 0; t < k; t++) pieces.push(lens[i]); cnt[i] -= k; left -= k; });
+    best.c.forEach((k, i) => { for (let t = 0; t < k; t++) pieces.push(i); cnt[i] -= k; left -= k; });
     let stockId = null;
     if (best.opt.src === 'stock') { best.opt.rem.avail--; stockId = best.opt.rem.ids.shift(); }
-    bars.push({ src: best.opt.src, len: best.opt.len, value: best.opt.value, pieces, leftover: best.leftover, keep: best.keep > 0, distinct: best.distinct, stockId });
+    bars.push({ src: best.opt.src, len: best.opt.len, value: best.opt.value, pieces, lens, leftover: best.leftover, keep: best.keep > 0, distinct: best.distinct, stockId });
   }
   return { bars, unplaced: left };
 }
@@ -89,28 +89,33 @@ function runGreedy(lens, demand, o, remnants, lam) {
 function evalPlan(bars, o, w) {
   let cost = 0, changes = 0;
   for (const b of bars) {
-    const pieces = b.pieces.reduce((a, x) => a + x, 0);
+    const pieces = b.pieces.reduce((a, i) => a + b.lens[i], 0);
     cost += b.value - pieces - (b.keep ? KEEP_VALUE * b.leftover : 0);
     changes += b.distinct - 1;
   }
   return cost + w * o.barLen * changes;
 }
 
-// cuts: [{len, qty, label}], o: {barLen,kerf,trim,threshold,simplicity(0..100)}, remnants: [{len, id}] (one per physical piece)
+// Cut angles in degrees (90 = square). The saw blade goes through kerf / sin(angle) of the bar's length.
+const angleKerf = (kerf, a) => kerf / Math.sin(Math.max(15, Math.min(165, +a || 90)) * Math.PI / 180);
+
+// cuts: [{len, qty, label, a1, a2}], o: {barLen,kerf,trim,threshold,simplicity(0..100)}, remnants: [{len, id}] (one per physical piece)
 function optimize(cuts, o, remnants) {
   const errors = [];
   const cap = o.barLen - o.trim;
-  const byLen = new Map();
+  // one item per length + angles; a piece's kerf is the average of its two end cuts
+  const items = new Map();
   for (const c of cuts) {
-    const len = +c.len, qty = Math.round(+c.qty || 0);
+    const len = +c.len, qty = Math.round(+c.qty || 0), a1 = +c.a1 || 45, a2 = +c.a2 || 45;
     if (!(len > 0) || qty < 1) continue;
     if (len > cap) { errors.push(`${len} mm je delší než použitelná tyč (${cap} mm)`); continue; }
-    if (!byLen.has(len)) byLen.set(len, { qty: 0, labels: [] });
-    const e = byLen.get(len); e.qty += qty;
+    const k = len + '|' + a1 + '|' + a2;
+    if (!items.has(k)) items.set(k, { len, a1, a2, kerf: (angleKerf(o.kerf, a1) + angleKerf(o.kerf, a2)) / 2, qty: 0, labels: [] });
+    const e = items.get(k); e.qty += qty;
     for (let i = 0; i < qty; i++) e.labels.push(c.label || '');
   }
-  const lens = [...byLen.keys()].sort((a, b) => b - a);
-  const demand = lens.map(l => byLen.get(l).qty);
+  const list = [...items.values()].sort((a, b) => b.len - a.len || a.a1 + a.a2 - b.a1 - b.a2);
+  const lens = list.map(e => e.len), kf = list.map(e => e.kerf), demand = list.map(e => e.qty);
   const remMap = new Map();
   for (const r of remnants) {
     if (!remMap.has(r.len)) remMap.set(r.len, []);
@@ -121,35 +126,35 @@ function optimize(cuts, o, remnants) {
   const w = 0.002 + 0.5 * s * s;
   let best = null;
   for (const lam of [0, 0.005, 0.01, 0.02, 0.035, 0.05, 0.08, 0.12, 0.18, 0.25, 0.4, 0.6]) {
-    const r = runGreedy(lens, demand, o, rems, lam);
+    const r = runGreedy(lens, demand, o, rems, lam, kf);
     if (r.unplaced) continue;
     const score = evalPlan(r.bars, o, w);
     if (!best || score < best.score - 1e-6 || (Math.abs(score - best.score) < 1e-6 && r.bars.length < best.bars.length)) best = { score, bars: r.bars };
   }
-  if (!best) return { bars: [], patterns: [], stats: null, errors: errors.concat(lens.length ? ['Nepodařilo se umístit všechny kusy'] : []) };
+  if (!best) return { bars: [], patterns: [], stats: null, errors: errors.concat(list.length ? ['Nepodařilo se umístit všechny kusy'] : []) };
   // assign labels, sort pieces longest first so each length is cut in one go
-  const queues = new Map(lens.map(l => [l, byLen.get(l).labels.slice()]));
+  const queues = list.map(e => e.labels.slice());
   const bars = best.bars.map(b => {
-    const ps = b.pieces.slice().sort((x, y) => y - x).map(len => ({ len, label: queues.get(len).shift() || '' }));
+    const ps = b.pieces.slice().sort((x, y) => lens[y] - lens[x] || y - x).map(i => ({ item: i, len: lens[i], a1: list[i].a1, a2: list[i].a2, label: queues[i].shift() || '' }));
     return { src: b.src, len: b.len, stockId: b.stockId, pieces: ps, leftover: Math.floor(b.leftover), keep: b.keep, distinct: b.distinct };
   });
   // group identical bars into patterns: stock first, then most repeated
   const pmap = new Map();
   for (const b of bars) {
-    const key = b.src + ':' + b.len + ':' + b.pieces.map(p => p.len).join(',');
+    const key = b.src + ':' + b.len + ':' + b.pieces.map(p => p.item).join(',');
     if (!pmap.has(key)) pmap.set(key, { key, src: b.src, len: b.len, count: 0, leftover: b.leftover, keep: b.keep, bars: [] });
     const p = pmap.get(key); p.count++; p.bars.push(b);
   }
   const patterns = [...pmap.values()].map(p => {
     const groups = [];
     p.bars[0].pieces.forEach(pc => {
-      let g = groups.find(x => x.len === pc.len);
-      if (!g) { g = { len: pc.len, n: 0 }; groups.push(g); }
+      let g = groups.find(x => x.item === pc.item);
+      if (!g) { g = { item: pc.item, len: pc.len, a1: pc.a1, a2: pc.a2, n: 0 }; groups.push(g); }
       g.n++;
     });
     const labels = {};
-    for (const b of p.bars) for (const pc of b.pieces) if (pc.label) (labels[pc.len] = labels[pc.len] || []).push(pc.label);
-    groups.forEach(g => { g.labels = labels[g.len] || []; });
+    for (const b of p.bars) for (const pc of b.pieces) if (pc.label) (labels[pc.item] = labels[pc.item] || []).push(pc.label);
+    groups.forEach(g => { g.labels = labels[g.item] || []; });
     return { src: p.src, len: p.len, count: p.count, leftover: p.leftover, keep: p.keep, groups, stockIds: p.bars.map(b => b.stockId).filter(Boolean) };
   }).sort((a, b) => (a.src === b.src ? b.count - a.count || b.groups.length - a.groups.length : a.src === 'stock' ? -1 : 1));
   const newBars = bars.filter(b => b.src === 'new').length;
@@ -159,7 +164,7 @@ function optimize(cuts, o, remnants) {
   const piecesLen = bars.reduce((a, b) => a + b.pieces.reduce((x, p) => x + p.len, 0), 0);
   const material = newBars * o.barLen + stockUsed.reduce((a, b) => a + b, 0);
   const changes = bars.reduce((a, b) => a + b.distinct - 1, 0);
-  const setup = lens.map(l => ({ len: l, qty: byLen.get(l).qty }));
+  const setup = list.map((e, i) => ({ item: i, len: e.len, a1: e.a1, a2: e.a2, qty: e.qty }));
   return { bars, patterns, setup, errors, stats: { newBars, stockUsed, scrap, kept, piecesLen, material, changes, pieceCount: demand.reduce((a, b) => a + b, 0) } };
 }
 

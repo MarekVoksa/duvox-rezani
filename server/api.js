@@ -8,7 +8,7 @@
 // so the data stays private even if the Access gate in front of the site is misconfigured.
 // For local development only, ALLOW_ANON=1 skips the check.
 
-const COLLS = new Set(['systems', 'profiles', 'colors', 'stock', 'jobs', 'history', 'config']);
+const COLLS = new Set(['systems', 'profiles', 'colors', 'finishes', 'stock', 'jobs', 'history', 'config']);
 const ID = /^[A-Za-z0-9_-]{1,100}$/;
 const MAX_DOC = 900 * 1024;
 

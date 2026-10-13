@@ -1,4 +1,4 @@
-// REF2MEN import against the fake db: pictures, finish guess, finish buttons, and the learned mapping on a second import.
+// REF2MEN import against the fake db: pictures, colors created from REF2MEN codes, provedení built from them, angles, and recognition on a second import.
 // PDF: argv[2] (default: the sample in the project files). pdf.js: PDFJS_DIR (cdnjs is not reachable from the test box).
 const { chromium } = require('playwright'), fs = require('fs'), path = require('path');
 const pdfPath = process.argv[2] || '/mnt/project-files/uploads/REF2MEN-Optimalizace-Velickova.pdf';
@@ -13,16 +13,17 @@ const pdfjs = process.env.PDFJS_DIR;
   await p.route('http://t/', r => r.fulfill({ contentType: 'text/html', body: '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script>' + fake + '</script></head><body>' + html + '</body></html>' }));
   await p.goto('http://t/'); await p.waitForTimeout(500);
   await p.setInputFiles('#imp-file', pdfPath); await p.waitForFunction(() => imp, null, { timeout: 20000 }); await p.waitForTimeout(300);
-  const state = () => p.evaluate(() => imp && imp.blocks.map(b => `${b.article} on=${b.on} fin=${b.finish} color=${b.colorId ? C(b.colorId).name : '-'} img=${!!b.img}`));
+  const state = () => p.evaluate(() => imp && imp.blocks.map(b => `${b.article} on=${b.on} codes=${impCodes(b).join('/')} fin=${b.finishId ? colorLabel(b) : '-'} missing=${(b.missing || []).join(',')} img=${!!b.img}`));
   console.log('first import', await state());
   await p.screenshot({ path: 'imp1.png', fullPage: true });
   // tick the first two, create their profiles; switch the first to "Dekor/bílá" to see the color picker appear, then back
   for (const i of [0, 1]) { await p.click(`[data-act=imp-toggle][data-i="${i}"]`); await p.waitForTimeout(200); await p.click(`[data-act=imp-new-profile][data-i="${i}"]`); await p.waitForTimeout(200); }
-  await p.click('[data-act=finish][data-ctx="imp:0"][data-v=dekor-bila]'); await p.waitForTimeout(200);
-  console.log('after dekor/bílá: go disabled', await p.$eval('[data-act=imp-go]', x => x.disabled), 'color picker label', await p.$eval('[data-ctx="imp:0"][data-kind=colors]', x => x.closest('.f-pick').firstElementChild.textContent));
-  await p.click('[data-act=finish][data-ctx="imp:0"][data-v=bila]'); await p.waitForTimeout(200);
+  console.log('go disabled before colors', await p.$eval('[data-act=imp-go]', x => x.disabled));
+  for (let k = 0; k < 4; k++) { const btn = await p.$('[data-act=imp-new-color]'); if (!btn) break; console.log('create', await btn.textContent()); await btn.click(); await p.waitForTimeout(200); }
+  console.log('after colors', await state());
+  await p.screenshot({ path: 'imp2.png', fullPage: true });
   await p.click('[data-act=imp-go]'); await p.waitForTimeout(500);
-  console.log('job groups', await p.$$eval('[data-g] h3', x => x.map(h => h.textContent)), 'imgs', await p.$$eval('[data-g] img.pimg', x => x.length));
+  console.log('job groups', await p.$$eval('[data-g] h3', x => x.map(h => h.textContent)), 'imgs', await p.$$eval('[data-g] img.pimg', x => x.length), 'angles', await p.evaluate(() => [...new Set(curJob().groups.flatMap(g => g.cuts.map(angTxt)))]));
   await p.screenshot({ path: 'job1.png', fullPage: true });
   await p.click('[data-act=close-job]'); await p.waitForTimeout(200);
   await p.setInputFiles('#imp-file', pdfPath); await p.waitForFunction(() => imp, null, { timeout: 20000 }); await p.waitForTimeout(300);

@@ -12,7 +12,7 @@ const { chromium } = require('playwright');
   await p.click('[data-act=open-job]'); await p.waitForTimeout(300);
   await p.screenshot({ path: 's2-job.png', fullPage: true });
   // open color picker on group 3 and search
-  await p.click('[data-g] >> nth=2 >> [data-act=open-pick][data-kind=colors]'); await p.fill('#pick-q','antr'); await p.waitForTimeout(200);
+  await p.click('[data-g] >> nth=2 >> [data-act=open-pick][data-kind=finishes]'); await p.fill('#pick-q','antr'); await p.waitForTimeout(200);
   await p.screenshot({ path: 's3-pick.png', fullPage: false, clip:{x:0,y:0,width:400,height:860} });
   await p.click('[data-act=close-pick]');
   await p.click('[data-act=sel-all]'); await p.waitForTimeout(100);
