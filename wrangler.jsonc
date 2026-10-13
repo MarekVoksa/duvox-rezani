@@ -6,9 +6,9 @@
   "build": { "command": "sh build.sh" },
   "assets": { "directory": "./dist", "binding": "ASSETS" },
   "d1_databases": [
-    { "binding": "DB", "database_name": "duvox-rezani", "database_id": "00000000-0000-0000-0000-000000000000" }
+    { "binding": "DB", "database_name": "duvox-rezani", "database_id": "e09eb553-84c1-4562-bffb-fdb0c80fc5ac" }
   ],
   // Cloudflare Access: team domain (e.g. duvox.cloudflareaccess.com) and the application's AUD tag.
   // Until both are set the server refuses every request, so the data is never open.
-  "vars": { "TEAM_DOMAIN": "", "POLICY_AUD": "" }
+  "vars": { "TEAM_DOMAIN": "duvox.cloudflareaccess.com", "POLICY_AUD": "" }
 }
