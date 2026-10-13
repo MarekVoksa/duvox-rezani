@@ -334,7 +334,7 @@ const views = {
 
   sheet() {
     const r = ui.result;
-    if (!r) return `<div class="panel empty">Zatím žádný plán. Otevřete zakázku, vyberte profily a stiskněte Spočítat plán.</div>`;
+    if (!r) return planBuilder();
     return renderSheet(r, !r.savedId);
   },
 
@@ -511,6 +511,7 @@ function jobEditor(j) {
     <div class="actions"><button class="btn" data-act="add-group">+ Přidat profil</button>${fileBtn('+ Přidat z REF2MEN PDF')}</div>
     ${gs.length ? `<div class="go ${pick ? 'static' : ''}"><div class="go-in">
       <button class="btn primary big" data-act="optimize" ${ready.length ? '' : 'disabled'}>Spočítat plán</button>
+      <button class="link on-navy" data-act="plan-more">+ další zakázky</button>
       <span class="sel">${sel.length === gs.length ? 'všechny profily' : `vybráno ${sel.length} z ${gs.length}`}${ready.length < sel.length ? ` · ${sel.length - ready.length} bez profilu, barvy nebo délek` : ''}</span>
       <span style="margin-left:auto;display:flex;gap:12px"><button class="link on-navy" data-act="sel-all">Vybrat vše</button><button class="link on-navy" data-act="sel-none">Nic</button></span>
     </div></div>` : ''}`;
@@ -561,10 +562,54 @@ function groupPanel(g, gi) {
   </div>`;
 }
 
+// ---- plans over several jobs: the same profile, color, finish and bar length are cut together ----
+const readyGroup = g => g.selected && g.profileId && hasColor(g) && g.cuts.some(c => c.len > 0 && c.qty > 0);
+const jobTag = j => { const n = (j.name || 'Bez názvu').trim(), first = n.split(/\s+/)[0]; return /\d{3,}/.test(first) ? first : n.length > 14 ? n.slice(0, 13) + '…' : n; };
+function planGroups(jobIds) {
+  const jobs = jobIds.map(id => D.jobs.get(id)).filter(Boolean), multi = jobs.length > 1, map = new Map();
+  for (const j of jobs) for (const g of j.groups || []) {
+    if (!readyGroup(g)) continue;
+    const barLen = +g.barLen || settings.barLen, k = g.profileId + '|' + colorKey(g) + '|' + barLen;
+    let m = map.get(k);
+    if (!m) map.set(k, m = { group: { ...plain(g), finish: finOf(g), barLen, useStock: false, cuts: [] }, sources: [], jobs: new Set() });
+    m.sources.push({ jobId: j.id, gid: g.id }); m.jobs.add(j.id);
+    m.group.useStock = m.group.useStock || g.useStock;
+    // with several jobs, each piece says which job it belongs to
+    for (const c of g.cuts) if (c.len > 0 && c.qty > 0) m.group.cuts.push({ ...c, label: multi ? jobTag(j) + (c.label ? ': ' + c.label : '') : c.label });
+  }
+  return [...map.values()];
+}
+function defaultPlanJobs() {
+  const open = [...D.jobs.values()].filter(j => (j.groups || []).some(readyGroup)).sort((a, b) => (b.updated || '').localeCompare(a.updated || ''));
+  return open.length ? [open[0].id] : [];
+}
+function planBuilder() {
+  if (!ui.planJobs || !ui.planJobs.some(id => D.jobs.has(id))) ui.planJobs = defaultPlanJobs();
+  const sel = new Set(ui.planJobs.filter(id => D.jobs.has(id)));
+  const jobs = [...D.jobs.values()].sort((a, b) => ((b.groups || []).some(readyGroup) - (a.groups || []).some(readyGroup)) || (b.updated || '').localeCompare(a.updated || ''));
+  const merged = planGroups([...sel]), shared = merged.filter(m => m.jobs.size > 1).length;
+  return `
+    <h1 class="on-navy">Nový plán</h1>
+    <div class="panel">
+      <p class="small muted">Vyberte zakázky, které chcete řezat spolu. Stejný profil ve stejné barvě a provedení se z více zakázek nařeže dohromady, takže vznikne méně odpadu a méně přestavování. V plánu u každého kusu uvidíte, ke které zakázce patří.</p>
+      ${jobs.length ? jobs.map(j => {
+        const n = (j.groups || []).filter(readyGroup).length;
+        return `<label class="toggle plan-job ${n ? '' : 'off'}"><input type="checkbox" data-act="plan-job" data-id="${j.id}" ${sel.has(j.id) ? 'checked' : ''} ${n ? '' : 'disabled'}>
+          <span><b>${esc(j.name || 'Bez názvu')}</b> <span class="small muted">${czDate(j.created)} · ${n ? `${n} ${pl(n, 'profil', 'profily', 'profilů')} k řezání` : 'nic k řezání (nařezáno nebo nevybráno)'}${j.systemId && SY(j.systemId) ? ' · ' + esc(SY(j.systemId).name) : ''}</span></span></label>`;
+      }).join('') : '<div class="empty">Zatím žádné zakázky.</div>'}
+    </div>
+    <div class="go"><div class="go-in">
+      <button class="btn primary big" data-act="optimize-plan" ${merged.length ? '' : 'disabled'}>Spočítat plán</button>
+      <span class="sel">${sel.size} ${pl(sel.size, 'zakázka', 'zakázky', 'zakázek')} · ${merged.length} ${pl(merged.length, 'profil', 'profily', 'profilů')}${shared ? ` · ${shared} ${pl(shared, 'řeže', 'řežou', 'řeže')} se dohromady` : ''}</span>
+    </div></div>`;
+}
+
 function renderSheet(r, live) {
+  const jobNames = (r.jobIds || []).length > 1 ? r.jobIds.map(id => D.jobs.get(id)).filter(Boolean).map(j => j.name || 'Bez názvu') : [];
   return `
   <div class="panel accent">
     <div class="spread"><h1>${esc(r.name || 'Bez názvu')}</h1><span class="muted">${czDate(r.date)}</span></div>
+    ${jobNames.length ? `<div class="chips">${jobNames.map(n => `<span class="chip ind">${esc(n)}</span>`).join('')}</div>` : ''}
     <div class="small muted">Řez ${num(r.settings.kerf)} mm · zaříznutí ${num(r.settings.trim)} mm · zbytky od ${num(r.settings.threshold)} mm · ${simpText(r.simplicity)}</div>
     ${r.savedId ? `<div class="chips"><span class="chip ok">Uloženo v historii</span></div>` : ''}
   </div>
@@ -597,7 +642,7 @@ function renderSheet(r, live) {
     </div>`;
   }).join('')}
   <div class="actions">
-    ${live ? `<button class="btn primary big" data-act="save-result">Uložit a upravit sklad</button><button class="btn" data-act="back-job">Zpět na zakázku</button>` : `${D.jobs.has(r.jobId) ? '<button class="btn" data-act="back-job">Zpět na zakázku</button>' : ''}<button class="btn" data-act="reuse">Zkopírovat do nové zakázky</button>`}
+    ${live ? `<button class="btn primary big" data-act="save-result">Uložit a upravit sklad</button><button class="btn" data-act="plan-edit">Změnit zakázky v plánu</button><button class="btn" data-act="back-job">Zpět na zakázku</button>` : `${D.jobs.has(r.jobId) ? '<button class="btn" data-act="back-job">Zpět na zakázku</button>' : ''}<button class="btn" data-act="reuse">Zkopírovat do nové zakázky</button><button class="btn" data-act="plan-new">Nový plán</button>`}
     <button class="btn" data-act="pdf">Stáhnout PDF k tisku</button>
     <button class="btn" data-act="copy-text">Kopírovat jako text</button>
   </div>
@@ -694,7 +739,16 @@ document.addEventListener('click', e => {
       const o = pick.kind === 'profiles' ? { id: uid(), systemId: pickSystem() || ui.lastSystemId || null, name, code: '', barLen: settings.barLen, aliases: [] } : { id: uid(), name, code: '', finish: '', hex: '', aliases: [] };
       put(pick.kind, o); toast(`„${name}“ přidáno do katalogu. Doplnit ho můžete v Katalogu.`); choose(o.id); break;
     }
-    case 'optimize': runOptimize(t); break;
+    case 'optimize': runOptimize(t, [curJob().id]); break;
+    case 'optimize-plan': runOptimize(t, ui.planJobs.filter(id => D.jobs.has(id))); break;
+    case 'plan-more': ui.planJobs = [curJob().id]; ui.result = null; go('sheet'); break;
+    case 'plan-edit': ui.planJobs = (ui.result.jobIds || [ui.result.jobId]).filter(id => D.jobs.has(id)); ui.result = null; go('sheet'); break;
+    case 'plan-new': ui.planJobs = null; ui.result = null; go('sheet'); break;
+    case 'plan-job': {
+      const id = t.dataset.id, set = new Set(ui.planJobs || []);
+      if (t.checked) set.add(id); else set.delete(id);
+      ui.planJobs = [...set]; saveUi(); render(); break;
+    }
     case 'save-result': saveResult(); break;
     case 'back-job': if (ui.result && D.jobs.has(ui.result.jobId)) ui.jobId = ui.result.jobId; go('jobs'); break;
     case 'copy-text': {
@@ -819,17 +873,21 @@ document.addEventListener('change', e => {
   }
 });
 
-function runOptimize(btn) {
+function runOptimize(btn, jobIds) {
+  const jobs = jobIds.map(id => D.jobs.get(id)).filter(Boolean);
+  if (!jobs.length) return;
   btn.disabled = true; btn.textContent = 'Počítám…';
   setTimeout(() => {
-    const j = curJob(), st = settings;
-    const o = { kerf: +st.kerf, trim: +st.trim, threshold: +st.threshold, simplicity: j.simplicity ?? 60 };
-    const groups = j.groups.filter(g => g.selected && g.profileId && hasColor(g) && g.cuts.some(c => c.len > 0 && c.qty > 0)).map(g => {
+    const st = settings;
+    const o = { kerf: +st.kerf, trim: +st.trim, threshold: +st.threshold, simplicity: jobs[0].simplicity ?? 60 };
+    const groups = planGroups(jobs.map(j => j.id)).map(({ group: g, sources, jobs: js }) => {
       const p = P(g.profileId), c = C(g.colorId);
-      const plan = optimize(g.cuts, { barLen: +g.barLen || st.barLen, ...o }, g.useStock ? stockFor(g) : []);
-      return { gid: g.id, group: { ...plain(g), finish: finOf(g) }, title: `${pName(p)} · ${colorLabel(g)}`, sub: [pSub(p), needsColor(g) ? cSub(c) : ''].filter(Boolean).join(' · '), barLen: +g.barLen || st.barLen, plan };
+      const plan = optimize(g.cuts, { barLen: g.barLen, ...o }, g.useStock ? stockFor(g) : []);
+      const sub = [pSub(p), needsColor(g) ? cSub(c) : '', js.size > 1 ? `${js.size} ${pl(js.size, 'zakázka', 'zakázky', 'zakázek')} dohromady` : ''].filter(Boolean).join(' · ');
+      return { gid: sources[0].gid, sources, group: g, title: `${pName(p)} · ${colorLabel(g)}`, sub, barLen: g.barLen, plan };
     });
-    ui.result = { id: uid(), jobId: j.id, name: j.name, date: today(), simplicity: o.simplicity, settings: { kerf: o.kerf, trim: o.trim, threshold: o.threshold }, groups, savedId: null };
+    ui.planJobs = jobs.map(j => j.id);
+    ui.result = { id: uid(), jobId: jobs[0].id, jobIds: jobs.map(j => j.id), name: jobs.map(j => j.name || 'Bez názvu').join(' + '), date: today(), simplicity: o.simplicity, settings: { kerf: o.kerf, trim: o.trim, threshold: o.threshold }, groups, savedId: null };
     go('sheet');
   }, 30);
 }
@@ -859,8 +917,15 @@ function saveResult() {
   h.savedAt = new Date().toISOString();
   h.groups.forEach(gr => { delete gr.plan.bars; });
   put('history', h);
-  const j = D.jobs.get(r.jobId);
-  if (j) { for (const gr of r.groups) { const g = j.groups.find(x => x.id === gr.gid); if (g) { g.cutAt = r.date; g.selected = false; } } put('jobs', j); }
+  // mark every job group that went into the plan as cut
+  const touched = new Map();
+  for (const gr of r.groups) for (const s of gr.sources || [{ jobId: r.jobId, gid: gr.gid }]) {
+    const j = touched.get(s.jobId) || (D.jobs.get(s.jobId) && plain(D.jobs.get(s.jobId)));
+    if (!j) continue;
+    const g = j.groups.find(x => x.id === s.gid); if (g) { g.cutAt = r.date; g.selected = false; }
+    touched.set(s.jobId, j);
+  }
+  touched.forEach(j => put('jobs', j));
   saveUi(); render();
   toast(missing ? `Uloženo. ${missing} ${pl(missing, 'použitý zbytek už', 'použité zbytky už', 'použitých zbytků už')} ve skladu nebyl${missing > 1 ? 'y' : ''}.` : 'Uloženo, sklad upraven');
 }
