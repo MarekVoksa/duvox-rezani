@@ -334,9 +334,9 @@ const angTxt = c => { const [a, b] = angOf(c); return a === b ? num(a) : `${num(
 const oddAng = a => a !== 45 && a !== 90;
 // small picture of a piece: slanted end for 45°, square end for 90°, anything else square with the angle written
 function shapeIcon(c) {
-  const [a1, a2] = angOf(c), w = 34, h = 12, sl = a => a === 45 ? 7 : 0;
+  const [a1, a2] = angOf(c), w = 40, h = 12, sl = a => a === 45 ? h - 1 : 0;
   const txt = [a1, a2].filter(oddAng);
-  return `<span class="shape" title="${angTxt(c)}°">${txt.length && oddAng(a1) ? `<small>${num(a1)}°</small>` : ''}<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true"><polygon points="${sl(a1)},0.5 ${w - sl(a2)},0.5 ${w},${h - 0.5} 0,${h - 0.5}" fill="currentColor" fill-opacity=".18" stroke="currentColor" stroke-width="1.2"/>${oddAng(a1) ? `<line x1="1.5" y1="0" x2="1.5" y2="${h}" stroke="var(--red)" stroke-width="3"/>` : ''}${oddAng(a2) ? `<line x1="${w - 1.5}" y1="0" x2="${w - 1.5}" y2="${h}" stroke="var(--red)" stroke-width="3"/>` : ''}</svg>${oddAng(a2) ? `<small>${num(a2)}°</small>` : ''}</span>`;
+  return `<span class="shape" title="${angTxt(c)}°">${txt.length && oddAng(a1) ? `<small>${num(a1)}°</small>` : ''}<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true"><polygon points="0,0.5 ${w},0.5 ${w - sl(a2)},${h - 0.5} ${sl(a1)},${h - 0.5}" fill="currentColor" fill-opacity=".18" stroke="currentColor" stroke-width="1.2"/>${oddAng(a1) ? `<line x1="1.5" y1="0" x2="1.5" y2="${h}" stroke="var(--red)" stroke-width="3"/>` : ''}${oddAng(a2) ? `<line x1="${w - 1.5}" y1="0" x2="${w - 1.5}" y2="${h}" stroke="var(--red)" stroke-width="3"/>` : ''}</svg>${oddAng(a2) ? `<small>${num(a2)}°</small>` : ''}</span>`;
 }
 
 // ---- pasted lists ----
@@ -641,12 +641,13 @@ function groupPanel(g, gi) {
       ${open ? pickBoxHtml() : ''}
     </div>
     ${g.cuts.length ? `<div style="overflow-x:auto"><table class="cuts">
-      <thead><tr><th class="c-len">Délka mm</th><th class="c-qty">Kusů</th><th class="c-ang">Úhel °</th><th>Popis</th><th class="c-x"></th></tr></thead>
+      <thead><tr><th class="c-len">Délka mm</th><th class="c-qty">Kusů</th><th class="c-ang">Úhel °</th><th>Popis</th><th class="c-x" colspan="2"></th></tr></thead>
       <tbody>${g.cuts.map(x => `<tr data-c="${x.id}">
         <td><input class="len" inputmode="decimal" data-cf="len" value="${num(x.len)}" aria-label="Délka"></td>
         <td><input inputmode="numeric" data-cf="qty" value="${x.qty}" aria-label="Počet kusů"></td>
         <td><input class="${angOf(x).some(oddAng) ? 'odd' : ''}" inputmode="decimal" data-cf="ang" value="${angTxt(x)}" aria-label="Úhel řezu, např. 45 nebo 45/90"></td>
         <td><input data-cf="label" value="${esc(x.label)}" aria-label="Popis"></td>
+        <td class="c-dup"><button class="x dup" data-act="dup-cut" aria-label="Duplikovat řádek s otočenými úhly" title="Duplikovat s otočenými úhly (45/90 → 90/45)">⧉</button></td>
         <td class="c-x"><button class="x" data-act="del-cut" aria-label="Odebrat řádek">×</button></td></tr>`).join('')}</tbody>
     </table></div>
     <div class="small muted">${g.cuts.length} ${pl(g.cuts.length, 'délka', 'délky', 'délek')}, ${totalQty} ${pl(totalQty, 'kus', 'kusy', 'kusů')}</div>` : ''}
@@ -757,8 +758,9 @@ function renderSheet(r, live) {
 }
 // a piece on the bar: 45° ends slanted, 90° square, other angles square with the angle written at that end
 function segHtml(g, bg) {
-  const [a1, a2] = angOf(g), sl = a => a === 45 ? 'min(9px, 22%)' : '0px';
-  return `<div class="seg" style="flex:${g.len} 1 0;background:${bg};clip-path:polygon(${sl(a1)} 0, calc(100% - ${sl(a2)}) 0, 100% 100%, 0 100%)">${oddAng(a1) ? `<span class="ang l">${num(a1)}°</span>` : ''}${num(g.len)}${oddAng(a2) ? `<span class="ang r">${num(a2)}°</span>` : ''}</div>`;
+  // the bar is 34 px tall inside, so a 34 px slant is a true 45°; very short pieces get what fits. Long side on top, as cut seen from the front.
+  const [a1, a2] = angOf(g), sl = a => a === 45 ? 'min(34px, 45%)' : '0px';
+  return `<div class="seg" style="flex:${g.len} 1 0;background:${bg};clip-path:polygon(0 0, 100% 0, calc(100% - ${sl(a2)}) 100%, ${sl(a1)} 100%)">${oddAng(a1) ? `<span class="ang l">${num(a1)}°</span>` : ''}${num(g.len)}${oddAng(a2) ? `<span class="ang r">${num(a2)}°</span>` : ''}</div>`;
 }
 const gLetter = i => (i >= 26 ? String.fromCharCode(64 + Math.floor(i / 26)) : '') + String.fromCharCode(65 + i % 26);
 function labelSummary(labels) {
@@ -835,6 +837,12 @@ document.addEventListener('click', e => {
     case 'del-group': j.groups = j.groups.filter(x => x !== g); saveJob(); render(); break;
     case 'sel-all': case 'sel-none': j.groups.forEach(x => x.selected = act === 'sel-all'); saveJob(); render(); break;
     case 'add-cut': addCut(g); break;
+    case 'dup-cut': {
+      // a copy right below with the two ends swapped: door frames need 45/90 and 90/45
+      const i = g.cuts.findIndex(c => c.id === t.closest('[data-c]').dataset.c), c = g.cuts[i], [a1, a2] = angOf(c);
+      g.cuts.splice(i + 1, 0, { ...plain(c), id: uid(), a1: a2, a2: a1 });
+      saveJob(); render(); break;
+    }
     case 'del-cut': g.cuts = g.cuts.filter(c => c.id !== t.closest('[data-c]').dataset.c); saveJob(); render(); break;
     case 'paste': {
       const rows = parseList($('#paste-' + g.id).value);

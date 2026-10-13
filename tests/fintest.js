@@ -43,6 +43,10 @@ const fail = m => { console.log('FAIL', m); process.exitCode = 1; };
   const cuts = await p.evaluate(() => D.jobs.get('j1').groups[0].cuts.map(c => `${c.len}x${c.qty}@${angTxt(c)}`));
   console.log('cuts', cuts);
   if (cuts.join() !== '1400x4@45,1000x2@90,800x1@45/90,500x2@30') fail('cuts ' + cuts);
+  // duplicate the 45/90 row: the copy below has the ends swapped
+  await p.click(`${g1} tr:nth-child(3) [data-act=dup-cut]`); await p.waitForTimeout(150);
+  const dup = await p.evaluate(() => D.jobs.get('j1').groups[0].cuts.map(c => `${c.len}@${angTxt(c)}`));
+  console.log('after dup', dup); if (dup.slice(2, 4).join() !== '800@45/90,800@90/45') fail('dup ' + dup);
   // pasted list with angles
   await p.evaluate(() => { document.querySelector('[data-g=g2] details').open = true; });
   await p.fill('#paste-g2', '700 2 Fix 90°\n650;1;Fix 45°/90°'); await p.click('[data-g=g2] [data-act=paste]'); await p.waitForTimeout(150);

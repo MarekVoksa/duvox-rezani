@@ -25,12 +25,12 @@ function printPattern(ctx, i) {
 
 // piece outline next to a length in the cut list: slanted 45° ends, square 90°, other angles written in
 function pdfShape(c, x, y, g) {
-  const [a1, a2] = angOf(g), w = 11, h = 3.2, sl = a => a === 45 ? 2.2 : 0;
+  const [a1, a2] = angOf(g), w = 12, h = 3.2, sl = a => a === 45 ? h : 0;
   c.font = `800 2.6px ${PFONT}`; c.textBaseline = 'alphabetic';
   let x0 = x;
   if (oddAng(a1)) { c.fillStyle = '#000'; c.textAlign = 'left'; c.fillText(num(a1) + '°', x0, y + 2.6); x0 += c.measureText(num(a1) + '°').width + 0.8; }
   c.fillStyle = '#e6e6e6'; c.strokeStyle = '#000'; c.lineWidth = 0.3;
-  c.beginPath(); c.moveTo(x0 + sl(a1), y); c.lineTo(x0 + w - sl(a2), y); c.lineTo(x0 + w, y + h); c.lineTo(x0, y + h); c.closePath(); c.fill(); c.stroke();
+  c.beginPath(); c.moveTo(x0, y); c.lineTo(x0 + w, y); c.lineTo(x0 + w - sl(a2), y + h); c.lineTo(x0 + sl(a1), y + h); c.closePath(); c.fill(); c.stroke();
   let end = x0 + w;
   if (oddAng(a2)) { c.fillStyle = '#000'; c.textAlign = 'left'; c.fillText(num(a2) + '°', end + 0.8, y + 2.6); end += c.measureText(num(a2) + '°').width + 0.8; }
   return end;
@@ -77,17 +77,19 @@ function pdfBlocks(r, ctx, imgs = []) {
         const segs = pt.groups.flatMap(g => Array(g.n).fill(g)), total = segs.reduce((a, g) => a + g.len, 0) + Math.max(pt.leftover, 0);
         let x = bx;
         for (const g of segs) {
-          const w = g.len / total * bw, [a1, a2] = angOf(g), sl = a => a === 45 ? Math.min(2.6, w / 4) : 0, s1 = sl(a1), s2 = sl(a2);
-          // 45° ends slanted, 90° square; other angles square with the angle written at that end
+          // 45° ends at a true 45° (slant = bar height, less only for very short pieces), long side on top as seen from the front;
+          // 90° square; other angles square with the angle written at that end
+          const w = g.len / total * bw, [a1, a2] = angOf(g), sl = a => a === 45 ? Math.min(bh, w * 0.45) : 0, s1 = sl(a1), s2 = sl(a2);
           c.fillStyle = '#fff'; c.fillRect(x, by, w, bh);
-          c.fillStyle = pat(g); c.beginPath(); c.moveTo(x + s1, by); c.lineTo(x + w - s2, by); c.lineTo(x + w, by + bh); c.lineTo(x, by + bh); c.closePath(); c.fill();
-          font(800, 4.4); const tw = c.measureText(num(g.len)).width;
-          if (tw + 2 < w) { c.fillStyle = '#fff'; c.fillRect(x + w / 2 - tw / 2 - 0.8, by + bh / 2 - 2.5, tw + 1.6, 5); text(num(g.len), x + w / 2, by + bh / 2 + 1.5, 800, 4.4, '#000', 'center'); }
+          c.fillStyle = pat(g); c.beginPath(); c.moveTo(x, by); c.lineTo(x + w, by); c.lineTo(x + w - s2, by + bh); c.lineTo(x + s1, by + bh); c.closePath(); c.fill();
           for (const [col, lw] of [['#fff', 1.6], ['#000', 0.7]]) {   // white halo keeps the cut line visible on any pattern
             c.strokeStyle = col; c.lineWidth = lw; c.beginPath();
-            if (s1) { c.moveTo(x, by + bh); c.lineTo(x + s1, by); }
-            c.moveTo(x + w - s2, by); c.lineTo(x + w, by + bh); c.stroke();
+            if (s1) { c.moveTo(x, by); c.lineTo(x + s1, by + bh); }
+            c.moveTo(x + w, by); c.lineTo(x + w - s2, by + bh); c.stroke();
           }
+          // the length in black with a thick white outline, so it reads on any pattern without covering it
+          font(800, 4.4); const tw = c.measureText(num(g.len)).width;
+          if (tw + 1 < w) { c.textAlign = 'center'; c.textBaseline = 'alphabetic'; c.lineJoin = 'round'; c.strokeStyle = '#fff'; c.lineWidth = 1.3; c.strokeText(num(g.len), x + w / 2, by + bh / 2 + 1.5); text(num(g.len), x + w / 2, by + bh / 2 + 1.5, 800, 4.4, '#000', 'center'); }
           for (const [a, left] of [[a1, true], [a2, false]]) if (oddAng(a)) {
             const lab = num(a) + '°'; font(800, 2.6); const lw = c.measureText(lab).width + 1;
             const lx = left ? x + 0.3 : x + w - lw - 0.3;

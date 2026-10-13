@@ -127,7 +127,8 @@ button.x:hover { color: var(--red-ink); }
 .cuts td input { padding: 6px 7px; background: transparent; border-color: transparent; }
 .cuts td input:hover { border-color: var(--line); }
 .cuts .c-len { width: 26%; } .cuts .c-qty { width: 15%; } .cuts .c-ang { width: 17%; }
-.cuts td input.odd, .addrow input.odd { color: var(--red-ink); font-weight: 700; } .cuts .c-x { width: 44px; text-align: right; }
+.cuts td input.odd, .addrow input.odd { color: var(--red-ink); font-weight: 700; } .cuts .c-x { width: 40px; text-align: right; } .cuts .c-dup { width: 40px; text-align: right; }
+.x.dup { font-size: 20px; color: var(--indigo); }
 .cuts td input.len { font-weight: 700; font-size: 20px; }
 .addrow { display: grid; grid-template-columns: 1.2fr .7fr .8fr 1.5fr auto; gap: 8px; }
 @media (max-width: 500px) { .addrow { grid-template-columns: 1.3fr 1fr 1fr; } .addrow .lbl, .addrow button { grid-column: 1 / -1; } }
@@ -166,10 +167,10 @@ section.view > .spread .btn:hover, section.view > .actions .btn:hover, .go .btn:
 .src { font-size: 20px; font-weight: 700; }
 .src.stock { color: var(--indigo); }
 .bar { display: flex; height: 38px; overflow: hidden; background: var(--paper); border: 2px solid var(--navy); }
-.seg { position: relative; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 15px; overflow: hidden; white-space: nowrap; border-right: 2px solid var(--paper); min-width: 0; }
+.seg { position: relative; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 15px; overflow: hidden; white-space: nowrap; border-right: 2px solid var(--paper); min-width: 0; text-shadow: 0 0 2px rgba(0,0,0,.8), 0 0 4px rgba(0,0,0,.5); }
 .seg .ang { position: absolute; top: 1px; font-size: 11px; line-height: 1; padding: 1px 2px; background: #fff; color: var(--red-ink); font-weight: 800; }
 .seg .ang.l { left: 1px; } .seg .ang.r { right: 1px; }
-.seg.left { color: var(--muted); border-right: 0; background: repeating-linear-gradient(135deg, var(--paper) 0 6px, #e1e0ea 6px 9px); }
+.seg.left { text-shadow: none; color: var(--muted); border-right: 0; background: repeating-linear-gradient(135deg, var(--paper) 0 6px, #e1e0ea 6px 9px); }
 .seg.left.keep { background: repeating-linear-gradient(135deg, var(--soft) 0 6px, var(--peri) 6px 9px); color: var(--indigo); }
 .cl { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .cl li { display: grid; grid-template-columns: 14px 3.6ch auto auto 1fr; gap: 10px; align-items: baseline; }
