@@ -103,6 +103,8 @@ button.x:hover { color: var(--red-ink); }
 .opt:hover, .opt:focus-visible { background: var(--soft); }
 .opt small { color: var(--muted); font-weight: 500; font-size: 15px; }
 .opt.add { background: none; color: var(--indigo); border: 2px dashed var(--peri); }
+.filebtn { position: relative; overflow: hidden; }
+.filebtn input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 100px; }
 .pimg { height: 52px; width: auto; max-width: 64px; object-fit: contain; background: #fff; border: 1px solid var(--line); padding: 2px; flex: none; }
 .pimg.sm { height: 34px; max-width: 42px; }
 .pimg.big { height: 96px; max-width: 120px; }
@@ -950,8 +952,7 @@ const views = {
     const jobs = [...D.jobs.values()].sort((a, b) => (b.updated || '').localeCompare(a.updated || ''));
     return `
       ${hasExamples() ? `<div class="banner"><span>Obsahuje ukázková data (zakázka, katalog, sklad).</span><span class="actions">${confirmKey === 'ex' ? `<button class="btn danger" data-act="rm-examples">Ano, smazat ukázky</button><button class="btn" data-act="cancel">Ne</button>` : `<button class="btn" data-act="ask" data-key="ex">Smazat ukázky</button>`}</span></div>` : ''}
-      <div class="spread"><h1 class="on-navy">Zakázky</h1><span class="actions"><label class="btn" for="imp-file">Import z REF2MEN</label><button class="btn primary" data-act="new-job">Nová zakázka</button></span></div>
-      <input type="file" id="imp-file" accept=".pdf,application/pdf" hidden>
+      <div class="spread"><h1 class="on-navy">Zakázky</h1><span class="actions">${fileBtn('Import z REF2MEN')}<button class="btn primary" data-act="new-job">Nová zakázka</button></span></div>
       ${jobs.length ? jobs.map(j => {
         const gs = j.groups || [], cut = gs.filter(g => g.cutAt).length;
         return `<button class="card" data-act="open-job" data-id="${j.id}">
@@ -1114,6 +1115,9 @@ function editForm() {
   </div>`;
 }
 
+// The real file input sits invisibly on top of the button, so the tap lands on it directly
+// (some phone apps ignore a label that only points at a hidden input).
+const fileBtn = text => `<label class="btn filebtn">${text}<input type="file" id="imp-file" accept="application/pdf,.pdf" aria-label="${text}"></label>`;
 function jobEditor(j) {
   const gs = j.groups || [];
   const sel = gs.filter(g => g.selected);
@@ -1133,7 +1137,7 @@ function jobEditor(j) {
       </div>
     </div>
     ${gs.map((g, gi) => groupPanel(g, gi)).join('')}
-    <div class="actions"><button class="btn" data-act="add-group">+ Přidat profil</button><label class="btn" for="imp-file">+ Přidat z REF2MEN PDF</label><input type="file" id="imp-file" accept=".pdf,application/pdf" hidden></div>
+    <div class="actions"><button class="btn" data-act="add-group">+ Přidat profil</button>${fileBtn('+ Přidat z REF2MEN PDF')}</div>
     ${gs.length ? `<div class="go ${pick ? 'static' : ''}"><div class="go-in">
       <button class="btn primary big" data-act="optimize" ${ready.length ? '' : 'disabled'}>Spočítat plán</button>
       <span class="sel">${sel.length === gs.length ? 'všechny profily' : `vybráno ${sel.length} z ${gs.length}`}${ready.length < sel.length ? ` · ${sel.length - ready.length} bez profilu, barvy nebo délek` : ''}</span>

@@ -103,6 +103,8 @@ button.x:hover { color: var(--red-ink); }
 .opt:hover, .opt:focus-visible { background: var(--soft); }
 .opt small { color: var(--muted); font-weight: 500; font-size: 15px; }
 .opt.add { background: none; color: var(--indigo); border: 2px dashed var(--peri); }
+.filebtn { position: relative; overflow: hidden; }
+.filebtn input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 100px; }
 .pimg { height: 52px; width: auto; max-width: 64px; object-fit: contain; background: #fff; border: 1px solid var(--line); padding: 2px; flex: none; }
 .pimg.sm { height: 34px; max-width: 42px; }
 .pimg.big { height: 96px; max-width: 120px; }
