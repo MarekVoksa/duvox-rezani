@@ -24,7 +24,11 @@ The app picks its storage when it starts:
 - on Cloudflare: the server in `functions/` (`/api/...`), polled every few seconds for changes from others;
 - anywhere else (a plain file, a local preview without the server): the browser's localStorage, with example data.
 
-All three hold the same collections (`systems`, `profiles`, `colors`, `stock`, `jobs`, `history`, and the doc `config/settings`). **Katalog → Data → Stáhnout zálohu / Nahrát zálohu** moves everything between them as one JSON file.
+All three hold the same collections (`systems`, `profiles`, `colors`, `finishes`, `stock`, `jobs`, `history`, and the doc `config/settings`). **Katalog → Data → Stáhnout zálohu / Nahrát zálohu** moves everything between them as one JSON file.
+
+Colors carry their REF2MEN number (`ref`, bílá = 159). A finish (provedení) is three colors in REF2MEN order, inside / core / outside (e.g. 7512/159/7512); job groups and stock point to it with `finishId`. Older records with `colorId` + `finish` are converted once when the app loads.
+
+Each cut has two end angles `a1`/`a2` (default 45°). The optimizer counts the saw cut as kerf / sin(angle), so a 4 mm blade takes about 5.7 mm at 45°.
 
 ## Build and test
 
