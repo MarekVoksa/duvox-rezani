@@ -43,8 +43,9 @@ const fail = m => { console.log('FAIL', m); process.exitCode = 1; };
   const cuts = await p.evaluate(() => D.jobs.get('j1').groups[0].cuts.map(c => `${c.len}x${c.qty}@${angTxt(c)}`));
   console.log('cuts', cuts);
   if (cuts.join() !== '1400x4@45,1000x2@90,800x1@45/90,500x2@30') fail('cuts ' + cuts);
-  // duplicate the 45/90 row: the copy below has the ends swapped
+  // duplicate the 45/90 row, then flip the copy's ends
   await p.click(`${g1} tr:nth-child(3) [data-act=dup-cut]`); await p.waitForTimeout(150);
+  await p.click(`${g1} tr:nth-child(4) [data-act=flip-cut]`); await p.waitForTimeout(150);
   const dup = await p.evaluate(() => D.jobs.get('j1').groups[0].cuts.map(c => `${c.len}@${angTxt(c)}`));
   console.log('after dup', dup); if (dup.slice(2, 4).join() !== '800@45/90,800@90/45') fail('dup ' + dup);
   // pasted list with angles

@@ -126,8 +126,9 @@ button.x:hover { color: var(--red-ink); }
 .cuts td { padding: 2px 3px; border-bottom: 1px solid var(--line); }
 .cuts td input { padding: 6px 7px; background: transparent; border-color: transparent; }
 .cuts td input:hover { border-color: var(--line); }
-.cuts .c-len { width: 26%; } .cuts .c-qty { width: 15%; } .cuts .c-ang { width: 17%; }
-.cuts td input.odd, .addrow input.odd { color: var(--red-ink); font-weight: 700; } .cuts .c-x { width: 40px; text-align: right; } .cuts .c-dup { width: 40px; text-align: right; }
+.cuts .c-len { width: 22%; } .cuts .c-qty { width: 12%; } .cuts .c-ang { width: 20%; }
+.cuts td input.odd, .addrow input.odd { color: var(--red-ink); font-weight: 700; } .cuts .c-x, .cuts .c-dup { width: 34px; text-align: right; padding-left: 0; padding-right: 0; }
+@media (max-width: 500px) { .cuts td input { padding: 6px 4px; } .cuts td input.len { font-size: 18px; } .cuts .c-x, .cuts .c-dup { width: 30px; } }
 .x.dup { font-size: 20px; color: var(--indigo); }
 .cuts td input.len { font-weight: 700; font-size: 20px; }
 .addrow { display: grid; grid-template-columns: 1.2fr .7fr .8fr 1.5fr auto; gap: 8px; }

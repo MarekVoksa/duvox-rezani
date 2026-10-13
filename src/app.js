@@ -641,13 +641,14 @@ function groupPanel(g, gi) {
       ${open ? pickBoxHtml() : ''}
     </div>
     ${g.cuts.length ? `<div style="overflow-x:auto"><table class="cuts">
-      <thead><tr><th class="c-len">Délka mm</th><th class="c-qty">Kusů</th><th class="c-ang">Úhel °</th><th>Popis</th><th class="c-x" colspan="2"></th></tr></thead>
+      <thead><tr><th class="c-len">Délka mm</th><th class="c-qty">Kusů</th><th class="c-ang">Úhel °</th><th>Popis</th><th class="c-x" colspan="3"></th></tr></thead>
       <tbody>${g.cuts.map(x => `<tr data-c="${x.id}">
         <td><input class="len" inputmode="decimal" data-cf="len" value="${num(x.len)}" aria-label="Délka"></td>
         <td><input inputmode="numeric" data-cf="qty" value="${x.qty}" aria-label="Počet kusů"></td>
         <td><input class="${angOf(x).some(oddAng) ? 'odd' : ''}" inputmode="decimal" data-cf="ang" value="${angTxt(x)}" aria-label="Úhel řezu, např. 45 nebo 45/90"></td>
         <td><input data-cf="label" value="${esc(x.label)}" aria-label="Popis"></td>
-        <td class="c-dup"><button class="x dup" data-act="dup-cut" aria-label="Duplikovat řádek s otočenými úhly" title="Duplikovat s otočenými úhly (45/90 → 90/45)">⧉</button></td>
+        <td class="c-dup">${angOf(x)[0] !== angOf(x)[1] ? `<button class="x dup" data-act="flip-cut" aria-label="Otočit úhly" title="Otočit úhly (45/90 → 90/45)">⇄</button>` : ''}</td>
+        <td class="c-dup"><button class="x dup" data-act="dup-cut" aria-label="Duplikovat řádek" title="Duplikovat řádek">⧉</button></td>
         <td class="c-x"><button class="x" data-act="del-cut" aria-label="Odebrat řádek">×</button></td></tr>`).join('')}</tbody>
     </table></div>
     <div class="small muted">${g.cuts.length} ${pl(g.cuts.length, 'délka', 'délky', 'délek')}, ${totalQty} ${pl(totalQty, 'kus', 'kusy', 'kusů')}</div>` : ''}
@@ -838,10 +839,14 @@ document.addEventListener('click', e => {
     case 'sel-all': case 'sel-none': j.groups.forEach(x => x.selected = act === 'sel-all'); saveJob(); render(); break;
     case 'add-cut': addCut(g); break;
     case 'dup-cut': {
-      // a copy right below with the two ends swapped: door frames need 45/90 and 90/45
-      const i = g.cuts.findIndex(c => c.id === t.closest('[data-c]').dataset.c), c = g.cuts[i], [a1, a2] = angOf(c);
-      g.cuts.splice(i + 1, 0, { ...plain(c), id: uid(), a1: a2, a2: a1 });
+      // a copy right below; with the flip button next to it, door frames get their 45/90 and 90/45 rows
+      const i = g.cuts.findIndex(c => c.id === t.closest('[data-c]').dataset.c);
+      g.cuts.splice(i + 1, 0, { ...plain(g.cuts[i]), id: uid() });
       saveJob(); render(); break;
+    }
+    case 'flip-cut': {
+      const c = g.cuts.find(x => x.id === t.closest('[data-c]').dataset.c), [a1, a2] = angOf(c);
+      c.a1 = a2; c.a2 = a1; saveJob(); render(); break;
     }
     case 'del-cut': g.cuts = g.cuts.filter(c => c.id !== t.closest('[data-c]').dataset.c); saveJob(); render(); break;
     case 'paste': {
