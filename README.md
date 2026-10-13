@@ -4,7 +4,7 @@ Cutting planner for 6 m window and door profiles at DUVOX s.r.o. It plans which 
 
 ## How it is built
 
-Plain HTML, CSS and JavaScript, no framework. `./build.sh` builds the website into `dist/` (for Cloudflare Pages) and the same app as one fragment into `build/artifact.html` (for the claude.ai artifact). How to deploy: [DEPLOY.md](DEPLOY.md).
+Plain HTML, CSS and JavaScript, no framework. `./build.sh` builds the website into `dist/` (served by the Cloudflare Worker) and the same app as one fragment into `build/artifact.html` (for the claude.ai artifact). How to deploy: [DEPLOY.md](DEPLOY.md).
 
 | File | What it does |
 | --- | --- |
@@ -13,7 +13,8 @@ Plain HTML, CSS and JavaScript, no framework. `./build.sh` builds the website in
 | `src/ref2men.js` | Reads REF2MEN "Seznam řezů" PDFs with pdf.js (loaded from cdnjs on demand), including the profile cross-section pictures |
 | `src/pdf.js` | Printable A4 PDF export: pages drawn on a canvas, colors plus fill patterns so it also works in black and white |
 | `src/app.js` | App: jobs, catalog (systems, profiles, colors), stock, history, import, plan screen, backup |
-| `functions/api/[[path]].js` | Server part on Cloudflare: document store on D1, checks the Cloudflare Access sign-in on every request |
+| `server/api.js` | Server part on Cloudflare: document store on D1, checks the Cloudflare Access sign-in on every request |
+| `server/worker.js`, `wrangler.jsonc` | Cloudflare Worker: serves `dist/` and `/api/*` (`functions/` does the same for a Pages project) |
 | `public/` | Icons and manifest, so phones can add the app to the home screen |
 
 ## Data
