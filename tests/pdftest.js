@@ -3,8 +3,9 @@ const { chromium } = require('playwright');
   const b = await chromium.launch({executablePath:'/opt/pw-browsers/chromium'}).catch(()=>chromium.launch());
   const ctx = await b.newContext({ viewport: { width: 400, height: 860 }, acceptDownloads: true });
   const p = await ctx.newPage();
-  const errs=[]; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => m.type()==='error'&&errs.push(m.text()));
+  const errs=[]; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => m.type()==='error'&&!/status of 404/.test(m.text())&&errs.push(m.text()));
   const html = require('fs').readFileSync(require('path').join(__dirname,'../dist/index.html'),'utf8');
+  await p.route('http://t/api/**', r => r.fulfill({ status: 404, body: '' }));  // no server: data stays in the browser
   await p.route('http://t/', r => r.fulfill({contentType:'text/html', body:'<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>'+html+'</body></html>'}));
   await p.goto('http://t/'); await p.waitForTimeout(1200);
   await p.click('[data-act=open-job]'); await p.waitForTimeout(300);

@@ -5,6 +5,7 @@ async function slow(p, sel){ const el=await p.$(sel); console.log('slow', sel, !
   const p = await b.newPage({ viewport: { width: 400, height: 860 } });
   const errs=[]; p.on('pageerror', e => errs.push(e.message));
   const html = require('fs').readFileSync(process.argv[2]||require('path').join(__dirname,'../dist/index.html'),'utf8'); const fake=require('fs').readFileSync(require('path').join(__dirname,'fakedb.js'),'utf8');
+  await p.route('http://t/api/**', r => r.fulfill({ status: 404, body: '' }));  // no server: data stays in the browser
   await p.route('http://t/', r => r.fulfill({contentType:'text/html', body:'<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script>'+fake+'</script></head><body>'+html+'</body></html>'}));
   await p.goto('http://t/'); await p.waitForTimeout(500);
   await p.click('#tabs [data-tab=catalog]'); await p.click('[data-act=cat-new]'); await p.fill('#e-name','Synego R72'); await p.click('[data-act=cat-save]'); await p.waitForTimeout(200);

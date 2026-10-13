@@ -162,15 +162,7 @@ async function exportPdf(r, btn) {
   try {
     const blob = buildPdf(await pdfPages(r));
     const filename = `Rezani ${(r.name || 'plan').replace(/[\\/:*?"<>|]+/g, ' ').trim()} ${r.date}.pdf`;
-    let dl = null;
-    try { dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch (e) {}
-    if (dl) {
-      try { await dl.save({ filename, data: blob }); toast('PDF uloženo'); }
-      catch (e) { if (e && e.code !== 'declined') toast('PDF se nepodařilo uložit: ' + (e.message || e.code)); }
-    } else {
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    }
+    await saveFile(filename, blob);
   } catch (e) { toast('PDF se nepodařilo vytvořit: ' + (e.message || e)); }
   finally { btn.disabled = false; btn.textContent = label; }
 }

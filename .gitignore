@@ -1,3 +1,8 @@
 node_modules/
 *.png
+!public/*.png
 *.pdf
+build/
+.wrangler/
+.dev.vars
+dist/

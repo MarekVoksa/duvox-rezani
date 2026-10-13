@@ -4,7 +4,7 @@ Cutting planner for 6 m window and door profiles at DUVOX s.r.o. It plans which 
 
 ## How it is built
 
-Plain HTML, CSS and JavaScript, no framework. Everything is built into one file, `dist/index.html`.
+Plain HTML, CSS and JavaScript, no framework. `./build.sh` builds the website into `dist/` (for Cloudflare Pages) and the same app as one fragment into `build/artifact.html` (for the claude.ai artifact). How to deploy: [DEPLOY.md](DEPLOY.md).
 
 | File | What it does |
 | --- | --- |
@@ -12,16 +12,23 @@ Plain HTML, CSS and JavaScript, no framework. Everything is built into one file,
 | `src/optimizer.js` | Cutting-stock optimizer: tries bar patterns and scores plans on waste plus number of length changes (the "jednoduchost" slider) |
 | `src/ref2men.js` | Reads REF2MEN "Seznam řezů" PDFs with pdf.js (loaded from cdnjs on demand), including the profile cross-section pictures |
 | `src/pdf.js` | Printable A4 PDF export: pages drawn on a canvas, colors plus fill patterns so it also works in black and white |
-| `src/app.js` | App: jobs, catalog (systems, profiles, colors), stock, history, import, plan screen |
+| `src/app.js` | App: jobs, catalog (systems, profiles, colors), stock, history, import, plan screen, backup |
+| `functions/api/[[path]].js` | Server part on Cloudflare: document store on D1, checks the Cloudflare Access sign-in on every request |
+| `public/` | Icons and manifest, so phones can add the app to the home screen |
 
 ## Data
 
-Right now the app runs as a claude.ai Artifact and stores its shared data in the artifact database (collections `systems`, `profiles`, `colors`, `stock`, `jobs`, `history` and the doc `config/settings`). Opened outside claude.ai it falls back to the browser's localStorage, which is only per device. The storage code is the `put`, `del`, `putSettings` and `boot` functions at the top of `src/app.js`; that is the part to replace for own hosting with a shared backend.
+The app picks its storage when it starts:
+- on claude.ai (the artifact): the artifact's shared database;
+- on Cloudflare: the server in `functions/` (`/api/...`), polled every few seconds for changes from others;
+- anywhere else (a plain file, a local preview without the server): the browser's localStorage, with example data.
+
+All three hold the same collections (`systems`, `profiles`, `colors`, `stock`, `jobs`, `history`, and the doc `config/settings`). **Katalog → Data → Stáhnout zálohu / Nahrát zálohu** moves everything between them as one JSON file.
 
 ## Build and test
 
 ```sh
-./build.sh          # writes dist/index.html
+./build.sh          # writes dist/ and build/artifact.html
 npm install         # Playwright, for the tests
 npm test            # builds, then drives the app in Chromium
 ```

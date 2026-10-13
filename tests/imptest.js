@@ -9,6 +9,7 @@ const pdfjs = process.env.PDFJS_DIR;
   const errs = []; p.on('pageerror', e => errs.push(e.message));
   const html = fs.readFileSync(path.join(__dirname, '../dist/index.html'), 'utf8'), fake = fs.readFileSync(path.join(__dirname, 'fakedb.js'), 'utf8');
   if (pdfjs) await p.route('https://cdnjs.cloudflare.com/**', r => r.fulfill({ contentType: 'application/javascript', body: fs.readFileSync(path.join(pdfjs, r.request().url().split('/').pop())) }));
+  await p.route('http://t/api/**', r => r.fulfill({ status: 404, body: '' }));  // no server: data stays in the browser
   await p.route('http://t/', r => r.fulfill({ contentType: 'text/html', body: '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script>' + fake + '</script></head><body>' + html + '</body></html>' }));
   await p.goto('http://t/'); await p.waitForTimeout(500);
   await p.setInputFiles('#imp-file', pdfPath); await p.waitForFunction(() => imp, null, { timeout: 20000 }); await p.waitForTimeout(300);

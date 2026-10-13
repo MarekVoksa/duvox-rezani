@@ -63,17 +63,84 @@ document.addEventListener('pointerup', release, true);
 document.addEventListener('pointercancel', release, true);
 document.addEventListener('focusout', flush);
 
+// ---- Own server (Cloudflare deployment): same calls as the artifact db, backed by /api ----
+// Changes are fetched every few seconds; every write goes straight to the server.
+async function apiFetch(path, opt = {}) {
+  const r = await fetch('api/' + path, { ...opt, credentials: 'same-origin', redirect: 'manual', headers: { 'content-type': 'application/json' } });
+  // an expired sign-in turns API calls into redirects to the login page: reload to sign in again
+  if (r.type === 'opaqueredirect' || r.status === 401) { const e = new Error('Přihlášení vypršelo, stránka se znovu načte.'); e.code = 'signin'; throw e; }
+  if (!r.ok) { let b = {}; try { b = await r.json(); } catch (x) {} const e = new Error(b.error || 'HTTP ' + r.status); e.code = b.error; e.status = r.status; throw e; }
+  return r.json();
+}
+function httpStore() {
+  const docs = {}, subs = {}; let rev = 0, timer = null, busy = false;
+  const snapOf = c => ({ docs: Object.entries(docs[c] || {}).map(([id, d]) => ({ id, exists: true, data: () => d })) });
+  async function poll() {
+    if (busy) return; busy = true;
+    try {
+      let more = true; const touched = new Set();
+      while (more) {
+        const r = await apiFetch('changes?since=' + rev);
+        for (const d of r.docs) {
+          const m = (docs[d.coll] ||= {});
+          if (d.data === null) delete m[d.id]; else m[d.id] = d.data;
+          rev = Math.max(rev, d.rev); touched.add(d.coll);
+        }
+        more = r.more;
+      }
+      for (const c of touched) (subs[c] || []).forEach(f => f(c === 'config' ? null : snapOf(c)));
+    } catch (e) {
+      if (e.code === 'signin') { toast(e.message); setTimeout(() => location.reload(), 1500); }
+    } finally { busy = false; }
+  }
+  const soon = () => { clearTimeout(timer); timer = setTimeout(loop, 400); };
+  const loop = async () => { clearTimeout(timer); if (!document.hidden) await poll(); timer = setTimeout(loop, 5000); };
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) soon(); });
+  const write = (c, id, data) => apiFetch(`docs/${c}/${id}`, data ? { method: 'PUT', body: JSON.stringify(data) } : { method: 'DELETE' }).then(soon);
+  return {
+    start: loop,
+    collection: c => ({
+      onSnapshot(f) { (subs[c] ||= []).push(f); f(snapOf(c)); },
+      doc: id => ({ set: d => write(c, id, d), delete: () => write(c, id, null) })
+    }),
+    doc: path => {
+      const [c, id] = path.split('/');
+      return {
+        set: d => write(c, id, d),
+        onSnapshot(f) { (subs[c] ||= []).push(() => { const d = (docs[c] || {})[id]; f({ exists: !!d, data: () => d }); }); }
+      };
+    },
+    bulk: async list => { for (let i = 0; i < list.length; i += 200) await apiFetch('bulk', { method: 'POST', body: JSON.stringify(list.slice(i, i + 200)) }); soon(); }
+  };
+}
+let brokenWhy = '';
+async function serverStore() {
+  if (window.claude || location.protocol === 'file:') return null;
+  try { await apiFetch('changes?since=999999999999'); return httpStore(); }
+  catch (e) {
+    if (e.code === 'signin') { location.reload(); return new Promise(() => {}); }
+    if (e.status === 404) return null;   // no server here (local preview): keep data in this browser
+    mode = 'broken'; brokenWhy = e.code === 'not_configured' || e.code === 'no_database'
+      ? 'Server ještě není dokončený (chybí databáze nebo nastavení přihlášení).'
+      : 'Nepodařilo se spojit se serverem. Zkontrolujte připojení k internetu a obnovte stránku.';
+    return null;
+  }
+}
+
 async function boot() {
   render();
   let h = null;
   try { h = window.claude && window.claude.use ? await window.claude.use('db') : null; } catch (e) {}
+  if (!h) h = await serverStore();
+  if (mode === 'broken') { $('#app').innerHTML = `<div class="panel">${esc(brokenWhy)}</div>`; return; }
   if (h) {
-    db = h; mode = 'db';
+    db = h; mode = h.start ? 'server' : 'db';
     COLLS.forEach(c => db.collection(c).onSnapshot(snap => {
       D[c] = new Map(snap.docs.map(d => [d.id, { ...plain(d.data()), id: d.id }]));
       schedule();
     }, e => toast('Chyba databáze: ' + e.message)));
     db.doc('config/settings').onSnapshot(s => { if (s.exists) { settings = { ...DEFAULT_SETTINGS, ...plain(s.data()) }; schedule(); } });
+    if (db.start) db.start();
   } else {
     mode = 'local'; loadLocal();
     let seen = false; try { seen = !!localStorage.getItem(LKEY); } catch (e) {}
@@ -359,7 +426,9 @@ function settingsPanels() {
     </div>
     <div class="panel">
       <h2>Data</h2>
-      <p class="small muted">${mode === 'db' ? 'Katalog, sklad, zakázky a historie jsou ve sdílené databázi. Všichni, kdo mají přístup k této stránce, vidí stejná data.' : 'Data jsou uložená jen v tomto prohlížeči.'}</p>
+      <p class="small muted">${mode === 'local' ? 'Data jsou uložená jen v tomto prohlížeči.' : 'Katalog, sklad, zakázky a historie jsou ve sdílené databázi. Všichni, kdo mají přístup k této stránce, vidí stejná data.'}</p>
+      <div class="actions"><button class="btn" data-act="backup">Stáhnout zálohu</button><label class="btn filebtn">Nahrát zálohu<input type="file" id="restore-file" accept="application/json,.json" aria-label="Nahrát zálohu"></label></div>
+      <p class="small muted">Záloha je jeden soubor se vším (katalog, sklad, zakázky, historie, nastavení). Nahrání zálohy přidá chybějící položky a přepíše ty se stejným ID, nic nemaže.</p>
       <div class="actions">${hasExamples() ? (confirmKey === 'ex' ? `<button class="btn danger" data-act="rm-examples">Ano, smazat ukázky</button><button class="btn" data-act="cancel">Ne</button>` : `<button class="btn" data-act="ask" data-key="ex">Smazat ukázková data</button>`) : `<button class="btn" data-act="load-examples">Načíst ukázková data</button>`}</div>
     </div>`;
 }
@@ -634,6 +703,7 @@ document.addEventListener('click', e => {
       break;
     }
     case 'pdf': exportPdf(ui.result, t); break;
+    case 'backup': downloadBackup(t); break;
     case 'finish': {
       const o = ctxObj(t.dataset.ctx); if (!o) break;
       o.finish = t.dataset.v; if (o.finish === 'bila') o.colorId = null;
@@ -731,6 +801,7 @@ document.addEventListener('change', e => {
   if (el.id === 'e-system') { $('#e-newsys').hidden = el.value !== '__new'; if (el.value === '__new') $('#e-newsys').focus(); return; }
   if (el.id === 'job-system') { j.systemId = el.value || null; saveJob(); render(); return; }
   if (el.id === 'imp-system') { imp.systemId = el.value || null; render(); return; }
+  if (el.id === 'restore-file') { const f = el.files && el.files[0]; el.value = ''; if (f) restoreBackup(f); return; }
   if (el.id === 'imp-file') { const f = el.files && el.files[0]; el.value = ''; if (f) startImport(f, j ? j.id : null); return; }
   if (el.id === 'simp') { j.simplicity = +el.value; saveJob(); }
   else if (el.id === 'job-name') { j.name = el.value.trim(); saveJob(); }
@@ -911,6 +982,41 @@ function finishImport() {
   put('jobs', j);
   ui.jobId = j.id; imp = null; pick = null; saveUi(); render(); window.scrollTo(0, 0);
   toast(`Importováno ${groups.length} ${pl(groups.length, 'profil', 'profily', 'profilů')}`);
+}
+
+// Offer a generated file: through the artifact's download prompt on claude.ai, as a normal download elsewhere.
+async function saveFile(filename, blob) {
+  let dl = null;
+  try { dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch (e) {}
+  if (dl) {
+    try { await dl.save({ filename, data: blob }); toast('Soubor uložen'); }
+    catch (e) { if (e && e.code !== 'declined') toast('Soubor se nepodařilo uložit: ' + (e.message || e.code)); }
+    return;
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+// ---- backup: everything in one JSON file; restoring merges by id ----
+async function downloadBackup(btn) {
+  const o = { app: 'duvox-rezani', version: 1, exported: new Date().toISOString(), settings: plain(settings) };
+  COLLS.forEach(c => o[c] = plain([...D[c].values()]));
+  await saveFile(`zaloha-rezani-${today()}.json`, new Blob([JSON.stringify(o, null, 1)], { type: 'application/json' }));
+}
+async function restoreBackup(file) {
+  let o;
+  try { o = JSON.parse(await file.text()); } catch (e) { toast('Soubor není záloha z této aplikace'); return; }
+  if (!o || o.app !== 'duvox-rezani') { toast('Soubor není záloha z této aplikace'); return; }
+  const list = [];
+  for (const c of COLLS) for (const d of o[c] || []) if (d && d.id) list.push({ coll: c, id: d.id, data: d });
+  if (!confirm(`Nahrát zálohu z ${czDate(o.exported)}? ${list.length} položek, stejné položky se přepíšou.`)) return;
+  toast('Nahrávám zálohu…');
+  try {
+    if (db && db.bulk) await db.bulk(list);
+    else for (const d of list) put(d.coll, d.data);
+    if (o.settings) { settings = { ...DEFAULT_SETTINGS, ...o.settings }; putSettings(); }
+    toast(`Záloha nahrána (${list.length} položek)`);
+  } catch (e) { toast('Nahrání se nepovedlo: ' + (e.message || e)); }
+  render();
 }
 
 window.addEventListener('pagehide', saveUi);

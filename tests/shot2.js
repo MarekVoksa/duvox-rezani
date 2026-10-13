@@ -4,6 +4,7 @@ const { chromium } = require('playwright');
   const p = await b.newPage({ viewport: { width: 400, height: 860 } });
   const errs=[]; p.on('pageerror', e => errs.push(e.message));
   const html = require('fs').readFileSync(require('path').join(__dirname,'../dist/index.html'),'utf8');
+  await p.route('http://t/api/**', r => r.fulfill({ status: 404, body: '' }));  // no server: data stays in the browser
   await p.route('http://t/', r => r.fulfill({contentType:'text/html', body:'<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>'+html+'</body></html>'}));
   await p.goto('http://t/'); await p.waitForTimeout(800);
   await p.screenshot({ path: 'k0-list.png' });
