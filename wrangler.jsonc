@@ -10,5 +10,5 @@
   ],
   // Cloudflare Access: team domain (e.g. duvox.cloudflareaccess.com) and the application's AUD tag.
   // Until both are set the server refuses every request, so the data is never open.
-  "vars": { "TEAM_DOMAIN": "duvox.cloudflareaccess.com", "POLICY_AUD": "" }
+  "vars": { "TEAM_DOMAIN": "duvox.cloudflareaccess.com", "POLICY_AUD": "c27d7d2ea31755f39a330baeb02ec17d60cb16554056a97da7990934279a2c6a" }
 }
