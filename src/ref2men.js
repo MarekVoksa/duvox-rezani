@@ -8,7 +8,7 @@
 //   "1 [01] 01 KŘÍDLO Vlevo 1346 45,0° 45,0°"    position, field, function + side, length, angles
 function parseRef2men(lines) {
   const out = { order: '', customer: '', blocks: [] };
-  let cur = null, expectCode = false;
+  let cur = null, expectCode = false, expectArticle = false;
   for (let i = 0; i < lines.length; i++) {
     const t = lines[i].replace(/\s+/g, ' ').trim();
     if (!t) continue;
@@ -23,9 +23,14 @@ function parseRef2men(lines) {
       expectCode = false;
       if (/^[\w.-]+\s*\//.test(t)) { cur.colorCode = t.replace(/\s+/g, ''); continue; }
     }
-    if ((m = t.match(/^(\d{5,8})\s+(\d{2,5})\s+(.+)$/)) && !/°/.test(t)) {
+    // every article starts with this header row: whatever follows belongs to the next article, never to the previous one
+    // (REF2MEN also lists e.g. steel reinforcement as article "1 1999" with no name or color)
+    if (/^Číslo artiklu\b/.test(t)) { cur = null; expectArticle = true; continue; }
+    const art = expectArticle ? t.match(/^(\d+)\s+(\d{1,5})(?:\s+(.+))?$/) : t.match(/^(\d{5,8})\s+(\d{2,5})\s+(.+)$/);
+    expectArticle = false;
+    if ((m = art) && !/°/.test(t)) {
       // short name and color are separate columns; the color is the last cell (see splitArticle)
-      const [ozn, color] = splitArticle(lines[i], m[3]);
+      const [ozn, color] = m[3] ? splitArticle(lines[i], m[3]) : ['', ''];
       cur = { article: m[1], variant: m[2], ozn, colorText: color, colorCode: '', desc: '', barLen: 0, cuts: [], line: i };
       out.blocks.push(cur);
       expectCode = true;
@@ -33,7 +38,7 @@ function parseRef2men(lines) {
     }
     if (!cur) continue;
     if ((m = t.match(/^Číslo tyče\s*\d+\s+(.+?)\s+(\d{4,5})(?:\s+\S+)?$/))) {
-      if (!cur.desc) cur.desc = m[1];
+      if (!cur.desc) { cur.desc = m[1]; if (!cur.ozn) cur.ozn = m[1]; }
       if (!cur.barLen) cur.barLen = +m[2];
       continue;
     }
