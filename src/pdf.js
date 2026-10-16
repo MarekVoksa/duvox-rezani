@@ -130,18 +130,18 @@ function pdfBlocks(r, ctx, imgs = []) {
   return B.map(b => ({ ...b, draw: (c, y) => { ctx = c; b.draw(c, y); } }));
 }
 
-async function pdfPages(r) {
+async function pdfPages(r, blocksOf) {
   try { await document.fonts.load(`700 12px Rokkitt`); await document.fonts.load(`400 12px Rokkitt`); await document.fonts.load(`800 12px Rokkitt`); } catch (e) {}
   const mk = () => { const c = document.createElement('canvas'); c.width = Math.round(PAGE_W * MM); c.height = Math.round(PAGE_H * MM); const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.setTransform(MM, 0, 0, MM, MARGIN * MM, MARGIN * MM); return { c, x }; };
   const probe = mk();
   // profile pictures (from REF2MEN) next to each profile heading
-  const imgs = await Promise.all(r.groups.map(gr => {
+  const imgs = blocksOf ? [] : await Promise.all(r.groups.map(gr => {
     const p = typeof P === 'function' && P(gr.group.profileId);
     if (!p || !p.img) return null;
     const im = new Image(); im.src = p.img;
     return im.decode().then(() => im, () => null);
   }));
-  const blocks = pdfBlocks(r, probe.x, imgs), bottom = PAGE_H - 2 * MARGIN - 6;
+  const blocks = (blocksOf || pdfBlocks)(r, probe.x, imgs), bottom = PAGE_H - 2 * MARGIN - 6;
   // paginate: a profile heading stays with the bar below it
   const pages = [[]]; let y = 0;
   blocks.forEach((b, i) => {
@@ -188,6 +188,44 @@ async function exportPdf(r, btn) {
     const blob = buildPdf(await pdfPages(r));
     const filename = `Rezani ${(r.name || 'plan').replace(/[\\/:*?"<>|]+/g, ' ').trim()} ${r.date}.pdf`;
     await saveFile(filename, blob);
+  } catch (e) { toast('PDF se nepodařilo vytvořit: ' + (e.message || e)); }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
+
+// ---- armování list: a heading per armature, then one row per length with a tick box and the pieces it belongs to ----
+function armPdfBlocks(list) {
+  return (r, ctx) => {
+    const B = [], font = (w, mm) => { ctx.font = `${w} ${mm}px ${PFONT}`; };
+    const text = (s, x, y, w, mm, color = '#000', align = 'left') => { font(w, mm); ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'alphabetic'; ctx.fillText(s, x, y); };
+    const wrap = (s, mm, max) => { font(400, mm); const out = []; let cur = ''; for (const word of s.split(' ')) { const t = cur ? cur + ' ' + word : word; if (ctx.measureText(t).width > max && cur) { out.push(cur); cur = word; } else cur = t; } if (cur) out.push(cur); return out; };
+    B.push({ h: 14, draw: (c, y) => { text('Armování: ' + (r.name || 'Bez názvu'), 0, y + 6, 700, 7); text(czDate(r.date), CW, y + 6, 700, 4.2, '#000', 'right'); text('Délky bez optimalizace, u každé délky kusy, do kterých patří.', 0, y + 11, 400, 3.4, '#444'); } });
+    list.forEach((x, i) => {
+      B.push({ h: 13, keepNext: true, draw: (c, y) => {
+        c.fillStyle = '#000'; c.fillRect(0, y + 1.5, 11, 9); text(gLetter(i), 5.5, y + 8.6, 800, 7, '#fff', 'center');
+        text(x.title, 14, y + 6, 700, 5);
+        text([x.code ? 'art. ' + x.code : '', `${x.pieces.length} ks`, `celkem ${num(Math.round(x.total / 100) / 10)} m`].filter(Boolean).join('  ·  '), 14, y + 10.6, 400, 3.3, '#333');
+      } });
+      for (const row of x.rows) {
+        const lines = wrap(labelSummary(row.labels), 3.3, CW - 38), h = Math.max(1, lines.length) * 4.8 + 1.6;
+        B.push({ h, draw: (c, y) => {
+          c.strokeStyle = '#000'; c.lineWidth = 0.35; c.strokeRect(0.2, y + 1.1, 3.6, 3.6);
+          text(`${row.n}×`, 16, y + 4.6, 800, 4.6, '#000', 'right');
+          text(num(row.len), 18, y + 4.6, 800, 4.6);
+          lines.forEach((ln, k) => text(ln, 38, y + 4.4 + k * 4.8, 400, 3.3, '#333'));
+          c.strokeStyle = '#ddd'; c.lineWidth = 0.2; c.beginPath(); c.moveTo(0, y + h - 0.3); c.lineTo(CW, y + h - 0.3); c.stroke();
+        } });
+      }
+      B.push({ h: 4, draw: () => {} });
+    });
+    return B.map(b => ({ ...b, draw: (c, y) => { ctx = c; b.draw(c, y); } }));
+  };
+}
+async function exportArmPdf(j, list, btn) {
+  const label = btn.textContent; btn.disabled = true; btn.textContent = 'Připravuji PDF…';
+  try {
+    const r = { name: j.name || 'Bez názvu', date: today() };
+    const blob = buildPdf(await pdfPages(r, armPdfBlocks(list)));
+    await saveFile(`Armovani ${r.name.replace(/[\\/:*?"<>|]+/g, ' ').trim()} ${r.date}.pdf`, blob);
   } catch (e) { toast('PDF se nepodařilo vytvořit: ' + (e.message || e)); }
   finally { btn.disabled = false; btn.textContent = label; }
 }

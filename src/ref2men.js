@@ -58,6 +58,55 @@ function parseRef2men(lines) {
   out.blocks = [...merged.values()].filter(b => b.cuts.length);
   return out;
 }
+// ---- REF2MEN "Seznam přířezů celk." (all cut pieces of an order, grouped by FUNKCE) ----
+// Only frames, sashes and door sashes are kept, plus the reinforcement (armování) that belongs to them.
+//   "FUNKCE..............: RÁM     GOLDEN OAK"                                 function, color
+//   "4  599000  90BLR 68  BRILL (35/28/1,:1.670) h.-  1  1.792  135,0 135,0"   position, article, variant+name, (armature type: length), place, qty, length, angles
+//   "FUNKCE..............: ARMOVÁNÍ     RÁM"                                   reinforcement for frames
+//   "4  244516  111Armování  35/28/1,5 mm  h.-  1  1.670"                        position, article, variant+name, place, qty, length
+const isPrirezy = lines => lines.slice(0, 20).some(l => /Seznam přířezů celk/i.test(l));
+const PR_FUNCS = { 'RÁM': 'Rám', 'KŘÍDLO': 'Křídlo', 'DV.KŘÍDLO': 'Dv. křídlo' };
+const PR_PLACES = { 'h.-': 'nahoře', 'd.-': 'dole', 'l.|': 'vlevo', 'p.|': 'vpravo', 'sv|': 'svisle', 'vo-': 'vodorovně' };
+const prNum = s => parseFloat(String(s).replace(/\./g, '').replace(',', '.'));
+// REF2MEN writes a mitre as 135°: the app counts it as 45°
+const prAng = s => { const a = parseFloat(String(s).replace(',', '.')); return a > 90 ? Math.round((180 - a) * 10) / 10 : a; };
+function parsePrirezy(lines) {
+  const out = { kind: 'prirezy', order: '', customer: '', blocks: [], armatures: [] };
+  const blocks = new Map(), arms = [];
+  let sec = null;   // {kind: 'profile'|'arm'|null, func, color}
+  const ROW = /^(\d+) (\S+) (\d{2,3})(.+?) ?(h\.-|d\.-|l\.\||p\.\||sv\||vo-) (\d+) (\d[\d.]*)(?: (\d+(?:,\d+)?) (\d+(?:,\d+)?))?$/;
+  for (const raw of lines) {
+    const t = raw.replace(/\s+/g, ' ').trim();
+    let m;
+    if ((m = t.match(/Číslo objednávky\.*:\s*(\S+)/)) && !out.order) out.order = m[1];
+    if ((m = raw.match(/Stavba\.*:\s*(.+?)(?:\s{3,}|$)/)) && !out.customer) out.customer = m[1].trim();
+    if ((m = raw.match(/^FUNKCE\.*:\s*(.+)$/))) {
+      const [func, second = ''] = m[1].split(/\s{3,}/).map(x => x.trim());
+      if (func === 'ARMOVÁNÍ') sec = PR_FUNCS[second] ? { kind: 'arm', func: second } : null;
+      else sec = PR_FUNCS[func] ? { kind: 'profile', func, color: second } : null;
+      continue;
+    }
+    if (!sec || !(m = t.match(ROW))) continue;
+    const [, pos, article, variant, mid, place, qty, len, a1, a2] = m;
+    if (sec.kind === 'arm') { arms.push({ code: article, name: mid.trim(), parent: sec.func, pos, place, qty: +qty, len: prNum(len) }); continue; }
+    const am = mid.match(/\(\s*([^:)]*?)\s*:\s*([\d.]+)\s*\)\s*$/);
+    const name = (am ? mid.slice(0, am.index) : mid).trim();
+    const k = article + '|' + variant + '|' + sec.color;
+    if (!blocks.has(k)) blocks.set(k, { article, variant, ozn: name, colorText: sec.color, colorCode: '', desc: '', func: sec.func, barLen: 0, cuts: [] });
+    const piece = { len: prNum(len), pos, place, func: sec.func, label: `P${pos} ${PR_FUNCS[sec.func]} ${PR_PLACES[place]}`, angles: `${a1 ? prAng(a1) : 90}°/${a2 ? prAng(a2) : 90}°`, armLen: am ? prNum(am[2]) : 0 };
+    for (let i = 0; i < +qty; i++) blocks.get(k).cuts.push({ ...piece });
+  }
+  // each piece's reinforcement: the ARMOVÁNÍ rows of its function with the same position, place and length (a door's lock side can have two)
+  for (const b of blocks.values()) for (const c of b.cuts) {
+    if (!c.armLen) continue;
+    c.armCodes = [...new Set(arms.filter(a => a.parent === c.func && a.pos === c.pos && a.place === c.place && a.len === c.armLen).map(a => a.code))];
+  }
+  const used = new Set([...blocks.values()].flatMap(b => b.cuts.flatMap(c => c.armCodes || [])));
+  out.armatures = [...new Map(arms.filter(a => used.has(a.code)).map(a => [a.code, { code: a.code, name: a.name }])).values()];
+  out.blocks = [...blocks.values()];
+  return out;
+}
+
 // The raw line keeps wide gaps between columns ("Kří Z 60      bílá"); use them to split name and color.
 function splitArticle(raw, rest) {
   const cells = raw.trim().split(/\s{3,}|\t/).map(s => s.trim()).filter(Boolean);
@@ -155,4 +204,4 @@ function loadPdfJs() {
   return pdfJsLoading;
 }
 
-if (typeof module !== 'undefined') module.exports = { parseRef2men };
+if (typeof module !== 'undefined') module.exports = { parseRef2men, parsePrirezy, isPrirezy };

@@ -1,6 +1,6 @@
 // ---- Data store: shared database when the page runs inside Claude, this browser otherwise ----
 const LKEY = 'duvox-rezani.data.v2', UKEY = 'duvox-rezani.ui.v2';
-const COLLS = ['systems', 'profiles', 'colors', 'finishes', 'stock', 'jobs', 'history'];
+const COLLS = ['systems', 'profiles', 'colors', 'finishes', 'armatures', 'stock', 'jobs', 'history'];
 const D = {}; COLLS.forEach(c => D[c] = new Map());
 const DEFAULT_SETTINGS = { kerf: 4, trim: 10, threshold: 500, barLen: 6000 };
 let settings = { ...DEFAULT_SETTINGS };
@@ -248,16 +248,25 @@ const swatch = c => c && c.hex ? `<span class="sw" style="background:${esc(c.hex
 const hexOf = id => (C(id) || {}).hex || '#ffffff';
 const sw3 = f => f ? `<span class="sw sw3" title="${esc(finCodes(f))}">${finTriple(f).map(id => `<i style="background:${esc(hexOf(id))}"></i>`).join('')}</span>` : swatch(null);
 const swatchOf = o => sw3(F(o.finishId));
-const hay = (o, kind) => norm(kind === 'profiles' ? [pName(o), o.code, (o.aliases || []).join(' ')].join(' ') : kind === 'finishes' ? [finName(o), finType(o), finCodes(o), finTriple(o).map(id => cName(C(id))).join(' ')].join(' ') : [o.name, o.code, o.ref, (o.aliases || []).join(' ')].join(' '));
+const hay = (o, kind) => norm(kind === 'armatures' ? [o.name, o.code].join(' ') : kind === 'profiles' ? [pName(o), o.code, (o.aliases || []).join(' ')].join(' ') : kind === 'finishes' ? [finName(o), finType(o), finCodes(o), finTriple(o).map(id => cName(C(id))).join(' ')].join(' ') : [o.name, o.code, o.ref, (o.aliases || []).join(' ')].join(' '));
 const oName = (kind, o) => kind === 'profiles' ? pName(o) : kind === 'finishes' ? finName(o) : o.name;
-const oSub = (kind, o) => kind === 'profiles' ? pSub(o) : kind === 'finishes' ? fSub(o) : cSub(o);
-const oIcon = (kind, o) => kind === 'profiles' ? pImg(o, 'pimg sm') : kind === 'finishes' ? sw3(o) : swatch(o);
+const oSub = (kind, o) => kind === 'armatures' ? (o.code ? 'art. ' + o.code : '') + (usage('armatures', o.id) ? ` · ${usage('armatures', o.id)} ${pl(usage('armatures', o.id), 'profil', 'profily', 'profilů')}` : '') : kind === 'profiles' ? pSub(o) : kind === 'finishes' ? fSub(o) : cSub(o);
+const oIcon = (kind, o) => kind === 'armatures' ? '' : kind === 'profiles' ? pImg(o, 'pimg sm') : kind === 'finishes' ? sw3(o) : swatch(o);
 // find or create the provedení made of these three colors (ids are derived from the colors, so two devices agree)
 function ensureFinish(i, c, o) {
   const ex = [...D.finishes.values()].find(f => f.inside === i && f.core === c && f.outside === o);
   if (ex) return ex;
   const f = { id: finId(i, c, o), inside: i, core: c, outside: o, name: '' };
   put('finishes', f); return f;
+}
+// Armování (steel reinforcement) is its own catalog: article number + editable name. A profile can be paired with the one we really use.
+const A = id => D.armatures.get(id);
+const armByCode = code => code && [...D.armatures.values()].find(a => norm(a.code) === norm(code));
+const armLabel = a => a ? [a.code, a.name].filter(Boolean).join(' · ') : '';
+function ensureArmature(code, name) {
+  const ex = armByCode(code); if (ex) return ex;
+  const a = { id: 'arm-' + String(code).replace(/[^\w-]/g, '_'), code, name: name || 'Armování ' + code };
+  put('armatures', a); return a;
 }
 const colorByRef = ref => ref && [...D.colors.values()].find(c => c.ref && norm(c.ref) === norm(ref));
 function search(kind, q) {
@@ -276,6 +285,7 @@ function summarizeLens(lens) {
 function usage(kind, id) {
   if (kind === 'systems') return [...D.profiles.values()].filter(p => p.systemId === id).length;
   if (kind === 'colors') return [...D.finishes.values()].filter(f => finTriple(f).includes(id)).length;
+  if (kind === 'armatures') return [...D.profiles.values()].filter(p => p.armatureId === id).length;
   const f = kind === 'profiles' ? 'profileId' : 'finishId';
   let n = 0;
   for (const s of D.stock.values()) if (s[f] === id) n++;
@@ -414,6 +424,7 @@ const views = {
   jobs() {
     if (imp) return importView();
     const j = curJob();
+    if (j && ui.armJob === j.id) return armView(j);
     if (j) return jobEditor(j);
     const jobs = [...D.jobs.values()].sort((a, b) => (b.updated || '').localeCompare(a.updated || ''));
     return `
@@ -490,18 +501,19 @@ const views = {
     if (kind === 'systems') return catalogSystems() + settingsPanels();
     const q = ui.catQ || '';
     const items = search(kind, q);
-    const isP = kind === 'profiles', isF = kind === 'finishes';
+    const isP = kind === 'profiles', isF = kind === 'finishes', isA = kind === 'armatures';
     return `
     <h1 class="on-navy">Katalog</h1>
     <div class="panel">
       <div class="spread"><div class="seg-ctl" role="group" aria-label="Katalog">
 ${catTabs()}</div>
-        <button class="btn primary" data-act="cat-new">${isP ? 'Nový profil' : isF ? 'Nové provedení' : 'Nová barva'}</button></div>
+        <button class="btn primary" data-act="cat-new">${isP ? 'Nový profil' : isF ? 'Nové provedení' : isA ? 'Nové armování' : 'Nová barva'}</button></div>
+      ${isA ? '<p class="small muted">Armování z dokumentu „Seznam přířezů“ se sem přidá samo. U profilu můžete nastavit, které armování skutečně používáte; to pak má přednost před tím z dokumentu.</p>' : ''}
       ${isF ? '<p class="small muted">Provedení je složené ze tří barev jako v REF2MEN: uvnitř / jádro profilu / venku. Např. 159/159/159 je celá bílá, 7512/159/7512 bílý profil se zlatým dubem z obou stran. Při importu se zakládají sama.</p>' : kind === 'colors' ? '<p class="small muted">Číslo barvy z REF2MEN (bílá = 159) se používá při importu k sestavení provedení.</p>' : ''}
       ${edit && !edit.id && edit.kind === kind ? editForm() : ''}
-      <input id="cat-q" value="${esc(q)}" placeholder="${isP ? 'Hledat podle názvu, systému, kódu nebo názvu z REF2MEN…' : isF ? 'Hledat podle barvy, čísla nebo typu (dekor/bílá)…' : 'Hledat podle názvu nebo čísla…'}" autocomplete="off">
+      <input id="cat-q" value="${esc(q)}" placeholder="${isP ? 'Hledat podle názvu, systému, kódu nebo názvu z REF2MEN…' : isF ? 'Hledat podle barvy, čísla nebo typu (dekor/bílá)…' : isA ? 'Hledat podle názvu nebo čísla artiklu…' : 'Hledat podle názvu nebo čísla…'}" autocomplete="off">
       <div class="cat">${items.map(o => edit && edit.id === o.id ? editForm() : `<button class="opt" data-act="cat-edit" data-id="${o.id}">${oIcon(kind, o)}<span>${esc(oName(kind, o))} <small>${esc(oSub(kind, o))}${o.aliases && o.aliases.length ? ` · ${o.aliases.length} ${pl(o.aliases.length, 'jiný název', 'jiné názvy', 'jiných názvů')}` : ''}</small></span><small>Upravit</small></button>`).join('') ||
-        `<div class="empty">${D[kind].size ? 'Nic nenalezeno.' : `Katalog je prázdný. Přidejte ${isP ? 'první profil' : isF ? 'první provedení' : 'první barvu'} tlačítkem nahoře.`}</div>`}</div>
+        `<div class="empty">${D[kind].size ? 'Nic nenalezeno.' : `Katalog je prázdný. Přidejte ${isP ? 'první profil' : isF ? 'první provedení' : isA ? 'první armování' : 'první barvu'} tlačítkem nahoře.`}</div>`}</div>
     </div>
     ${settingsPanels()}`;
   }
@@ -535,7 +547,8 @@ function catTabs() {
     <button data-act="cat-tab" data-kind="systems" aria-pressed="${k === 'systems'}">Systémy (${D.systems.size})</button>
     <button data-act="cat-tab" data-kind="profiles" aria-pressed="${k === 'profiles'}">Profily (${D.profiles.size})</button>
     <button data-act="cat-tab" data-kind="colors" aria-pressed="${k === 'colors'}">Barvy (${D.colors.size})</button>
-    <button data-act="cat-tab" data-kind="finishes" aria-pressed="${k === 'finishes'}">Provedení (${D.finishes.size})</button></div>`;
+    <button data-act="cat-tab" data-kind="finishes" aria-pressed="${k === 'finishes'}">Provedení (${D.finishes.size})</button>
+    <button data-act="cat-tab" data-kind="armatures" aria-pressed="${k === 'armatures'}">Armování (${D.armatures.size})</button></div>`;
 }
 function catalogSystems() {
   const list = sortedSystems();
@@ -549,6 +562,8 @@ function catalogSystems() {
     </div>`;
 }
 
+// "" = use whatever the přířezy document names for each piece
+const armOptions = (sel, docTxt) => `<option value="">${docTxt ? `Z dokumentu (${esc(docTxt)})` : '— podle dokumentu —'}</option>` + [...D.armatures.values()].sort((a, b) => a.name.localeCompare(b.name, 'cs')).map(a => `<option value="${a.id}" ${a.id === sel ? 'selected' : ''}>${esc(armLabel(a))}</option>`).join('');
 function editForm() {
   const isP = edit.kind === 'profiles';
   const used = edit.id ? usage(edit.kind, edit.id) : 0;
@@ -557,6 +572,14 @@ function editForm() {
     const s = edit.id ? D.systems.get(edit.id) : { name: '' };
     return `<div class="form"><label class="f">Název systému<input id="e-name" value="${esc(s.name)}" placeholder="např. Brillant"></label>
       <div class="actions"><button class="btn primary" data-act="cat-save">Uložit</button><button class="btn" data-act="cat-cancel">Zrušit</button>${used ? (edit.id ? `<span class="small muted">Má ${used} ${pl(used, 'profil', 'profily', 'profilů')}, nelze smazat.</span>` : '') : delBtn}</div></div>`;
+  }
+  if (edit.kind === 'armatures') {
+    const a = edit.id ? A(edit.id) : { name: '', code: '' };
+    return `<div class="form"><div class="row">
+      <label class="f" style="flex:2 1 200px">Název<input id="e-name" value="${esc(a.name)}" placeholder="např. Armování 35/28/1,5"></label>
+      <label class="f">Číslo artiklu<input id="e-code" value="${esc(a.code)}" placeholder="např. 244516"></label></div>
+      ${used ? `<p class="small muted">Přiřazeno k ${used} ${pl(used, 'profilu', 'profilům', 'profilům')}.</p>` : ''}
+      <div class="actions"><button class="btn primary" data-act="cat-save">Uložit</button><button class="btn" data-act="cat-cancel">Zrušit</button>${delBtn}</div></div>`;
   }
   if (edit.kind === 'finishes') {
     const f = edit.id ? F(edit.id) : { inside: '', core: '', outside: '', name: '' };
@@ -576,7 +599,8 @@ function editForm() {
     <div class="row">
       <label class="f">Číslo artiklu<input id="e-code" value="${esc(o.code)}" placeholder="např. 550900"></label>
       <label class="f" style="flex:0 1 130px">Délka tyče mm<input id="e-bar" inputmode="numeric" value="${num(o.barLen || settings.barLen)}"></label>
-    </div>` : `<div class="row">
+    </div>
+    <label class="f">Armování<select id="e-arm">${armOptions(o.armatureId)}</select></label>` : `<div class="row">
       <label class="f" style="flex:2 1 200px">Název<input id="e-name" value="${esc(o.name)}" placeholder="např. Zlatý dub"></label>
       <label class="f" style="flex:0 1 90px">Vzorek<input id="e-hex" type="color" value="${esc(o.hex || '#ffffff')}" style="height:44px;padding:2px"></label>
     </div>
@@ -613,7 +637,7 @@ function jobEditor(j) {
       </div>
     </div>
     ${gs.map((g, gi) => groupPanel(g, gi)).join('')}
-    <div class="actions"><button class="btn" data-act="add-group">+ Přidat profil</button>${fileBtn('+ Přidat z REF2MEN PDF')}</div>
+    <div class="actions"><button class="btn" data-act="add-group">+ Přidat profil</button>${fileBtn('+ Přidat z REF2MEN PDF')}${armList(j).length ? '<button class="btn" data-act="arm-open">Seznam armování</button>' : ''}</div>
     ${gs.length ? `<div class="go ${pick ? 'static' : ''}"><div class="go-in">
       <button class="btn primary big" data-act="optimize" ${ready.length ? '' : 'disabled'}>Optimalizovat</button>
       <button class="link on-navy" data-act="plan-more">+ další zakázky</button>
@@ -668,6 +692,47 @@ function groupPanel(g, gi) {
     <label class="toggle"><input type="checkbox" data-gf="useStock" ${g.useStock ? 'checked' : ''}>
       <span>Použít zbytky ze skladu <span class="muted small">${!g.profileId || !hasColor(g) ? '' : avail.length ? `(${avail.length} ${pl(avail.length, 'vhodný', 'vhodné', 'vhodných')}: ${summarizeLens(avail.map(a => a.len))})` : '(žádné vhodné)'}</span></span></label>
   </div>`;
+}
+
+// ---- armování list of a job: no optimization, just every length with its pieces, grouped by armature ----
+// A profile paired with an armature in the catalog uses that one; otherwise the armature named in the přířezy document.
+function armList(j) {
+  const m = new Map();
+  for (const g of j.groups || []) {
+    const p = P(g.profileId), paired = p && p.armatureId && A(p.armatureId);
+    for (const c of g.cuts || []) {
+      if (!c.arm || !(c.arm.len > 0)) continue;
+      const keys = paired ? [paired.id] : (c.arm.codes || []).length ? c.arm.codes.map(code => (armByCode(code) || { id: 'code:' + code }).id) : ['?'];
+      for (const k of keys) {
+        if (!m.has(k)) m.set(k, { key: k, arm: A(k), code: k.startsWith('code:') ? k.slice(5) : (A(k) || {}).code || '', pieces: [] });
+        for (let i = 0; i < (+c.qty || 0); i++) m.get(k).pieces.push({ len: c.arm.len, label: c.label });
+      }
+    }
+  }
+  return [...m.values()].map(x => {
+    const byLen = new Map();
+    for (const pc of x.pieces) (byLen.get(pc.len) || byLen.set(pc.len, []).get(pc.len)).push(pc.label);
+    const rows = [...byLen.entries()].sort((a, b) => b[0] - a[0]).map(([len, labels]) => ({ len, n: labels.length, labels }));
+    return { ...x, title: x.arm ? x.arm.name : x.key === '?' ? 'Armování bez čísla' : 'Armování ' + x.code, rows, total: x.pieces.reduce((a, pc) => a + pc.len, 0) };
+  }).sort((a, b) => a.title.localeCompare(b.title, 'cs'));
+}
+function armView(j) {
+  const list = armList(j);
+  return `
+    <div><button class="link on-navy" data-act="arm-close">← Zpět na zakázku</button></div>
+    <div class="panel accent"><div class="spread"><h1>Armování</h1><span class="muted">${czDate(today())}</span></div>
+      <div class="muted">${esc(j.name || 'Bez názvu')}</div>
+      <p class="small muted">Všechny délky armování zakázky, bez optimalizace. U každé délky je, do kterého kusu patří. Armování se bere podle profilu v katalogu, jinak podle dokumentu z REF2MEN.</p></div>
+    ${list.map((x, i) => `<div class="panel">
+      <div class="ghead"><span class="gnum big">${gLetter(i)}</span><div><h2>${esc(x.title)}</h2><div class="small muted">${[x.code ? 'art. ' + esc(x.code) : '', `${x.pieces.length} ${pl(x.pieces.length, 'kus', 'kusy', 'kusů')}`, `celkem ${num(Math.round(x.total / 100) / 10)} m`].filter(Boolean).join(' · ')}</div></div></div>
+      <ul class="cl arm">${x.rows.map(r => `<li><span class="tick"></span><span class="q">${r.n}×</span><span class="l">${num(r.len)}</span><span></span><span class="lab">${esc(labelSummary(r.labels))}</span></li>`).join('')}</ul>
+    </div>`).join('') || '<div class="panel empty">Tato zakázka nemá žádné délky armování. Ty přináší import „Seznam přířezů“ z REF2MEN.</div>'}
+    <div class="actions"><button class="btn" data-act="arm-pdf">Stáhnout PDF k tisku</button><button class="btn" data-act="arm-copy">Kopírovat jako text</button></div>`;
+}
+function armText(j) {
+  const lines = [`Armování: ${j.name || 'Bez názvu'} (${czDate(today())})`];
+  armList(j).forEach((x, i) => { lines.push('', `${gLetter(i)}  ${x.title}${x.code ? ' (' + x.code + ')' : ''}`); x.rows.forEach(r => lines.push(`${r.n}x ${r.len}  ${labelSummary(r.labels)}`)); });
+  return lines.join('\n');
 }
 
 // ---- plans over several jobs: the same profile, color, finish and bar length are cut together ----
@@ -833,7 +898,7 @@ document.addEventListener('click', e => {
     case 'cancel': confirmKey = null; render(); break;
     case 'new-job': { const nj = { id: uid(), name: '', created: today(), simplicity: 60, groups: [newGroup()] }; put('jobs', nj); ui.jobId = nj.id; saveUi(); render(); $('#job-name')?.focus(); break; }
     case 'open-job': ui.jobId = t.dataset.id; saveUi(); render(); window.scrollTo(0, 0); break;
-    case 'close-job': ui.jobId = null; pick = null; confirmKey = null; saveUi(); render(); break;
+    case 'close-job': ui.jobId = null; ui.armJob = null; pick = null; confirmKey = null; saveUi(); render(); break;
     case 'del-job': del('jobs', j.id); ui.jobId = null; confirmKey = null; saveUi(); render(); toast('Zakázka smazána'); break;
     case 'add-group': j.groups.push(newGroup()); saveJob(); render(); break;
     case 'del-group': j.groups = j.groups.filter(x => x !== g); saveJob(); render(); break;
@@ -879,6 +944,14 @@ document.addEventListener('click', e => {
       ui.planJobs = [...set]; saveUi(); render(); break;
     }
     case 'save-result': saveResult(); break;
+    case 'arm-open': ui.armJob = curJob().id; saveUi(); render(); window.scrollTo(0, 0); break;
+    case 'arm-close': ui.armJob = null; saveUi(); render(); break;
+    case 'arm-pdf': exportArmPdf(curJob(), armList(curJob()), t); break;
+    case 'arm-copy': {
+      const txt = armText(curJob());
+      try { navigator.clipboard.writeText(txt).then(() => toast('Seznam zkopírován'), () => toast('Kopírování tady není povolené')); } catch (err) { toast('Kopírování tady není povolené'); }
+      break;
+    }
     case 'back-job': if (ui.result && D.jobs.has(ui.result.jobId)) ui.jobId = ui.result.jobId; go('jobs'); break;
     case 'copy-text': {
       const txt = sheetText(ui.result);
@@ -917,6 +990,13 @@ document.addEventListener('click', e => {
     case 'cat-cancel': edit = null; confirmKey = null; render(); break;
     case 'cat-save': {
       const name = $('#e-name').value.trim();
+      if (edit.kind === 'armatures') {
+        if (!name) { $('#e-name').focus(); toast('Doplňte název'); break; }
+        const code = $('#e-code').value.trim();
+        if (code && [...D.armatures.values()].some(a => a.id !== edit.id && norm(a.code) === norm(code))) { toast(`Číslo ${code} už má jiné armování`); break; }
+        const a = { ...(edit.id ? A(edit.id) : { id: uid() }), name, code }; delete a.example;
+        put('armatures', a); edit = null; render(); toast('Uloženo'); break;
+      }
       if (edit.kind === 'finishes') {
         const v = Object.fromEntries(SIDES.map(([k]) => [k, $('#e-' + k).value]));
         if (SIDES.some(([k]) => !v[k])) { toast('Vyberte barvu pro všechny tři části'); break; }
@@ -941,7 +1021,7 @@ document.addEventListener('click', e => {
       if (edit.kind === 'profiles') ui.lastSystemId = systemId || null;
       const base = edit.id ? D[edit.kind].get(edit.id) : { id: uid() };
       const o = edit.kind === 'profiles'
-        ? { ...base, systemId: systemId || null, name, code: $('#e-code').value.trim(), barLen: parseFloat($('#e-bar').value.replace(',', '.')) || settings.barLen, aliases }
+        ? { ...base, systemId: systemId || null, name, code: $('#e-code').value.trim(), barLen: parseFloat($('#e-bar').value.replace(',', '.')) || settings.barLen, aliases, armatureId: $('#e-arm').value || null }
         : { ...base, name, ref: $('#e-ref').value.trim(), code: $('#e-code').value.trim(), hex: $('#e-hex').value };
       if (edit.kind === 'colors' && o.ref && [...D.colors.values()].some(c => c.id !== o.id && norm(c.ref) === norm(o.ref))) { toast(`Číslo ${o.ref} už má jiná barva`); break; }
       delete o.kind; delete o.system; delete o.finish;
@@ -990,6 +1070,7 @@ document.addEventListener('change', e => {
   const el = e.target, j = curJob();
   if (el.id === 'e-system') { $('#e-newsys').hidden = el.value !== '__new'; if (el.value === '__new') $('#e-newsys').focus(); return; }
   if (el.id === 'job-system') { j.systemId = el.value || null; saveJob(); render(); return; }
+  if (el.dataset.impArm !== undefined) { imp.blocks[+el.dataset.impArm].armSel = el.value; return; }
   if (el.id === 'imp-system') { imp.systemId = el.value || null; render(); return; }
   if (el.id === 'restore-file') { const f = el.files && el.files[0]; el.value = ''; if (f) restoreBackup(f); return; }
   if (el.id === 'imp-file') { const f = el.files && el.files[0]; el.value = ''; if (f) startImport(f, j ? j.id : null); return; }
@@ -1071,7 +1152,7 @@ function saveResult() {
 // ---- REF2MEN import: match PDF articles to catalog profiles and colors, learn new names ----
 const hasAlias = (list, s) => (list || []).some(a => norm(a) === norm(s));
 function matchProfile(b) {
-  const keys = [b.article, b.ozn, b.desc].filter(Boolean).map(norm);
+  const keys = [b.article, b.ozn, b.desc, String(b.ozn || '').replace(/\s+(BRILL|BRID)$/i, '')].filter(Boolean).map(norm);
   return [...D.profiles.values()].find(p => p.code && norm(p.code) === norm(b.article)) ||
     [...D.profiles.values()].find(p => (p.aliases || []).some(a => keys.includes(norm(a))));
 }
@@ -1099,10 +1180,12 @@ function guessColorName(b, code) {
 async function startImport(file, jobId) {
   toast('Čtu PDF…');
   let parsed;
-  try { const lines = await pdfLines(file); parsed = parseRef2men(lines); await pdfProfileImages(lines, parsed.blocks); }
+  // either REF2MEN document: "Seznam řezů" (optimization) or "Seznam přířezů celk." (all pieces, with armování)
+  try { const lines = await pdfLines(file); parsed = isPrirezy(lines) ? parsePrirezy(lines) : parseRef2men(lines); if (parsed.kind !== 'prirezy') await pdfProfileImages(lines, parsed.blocks); }
   catch (e) { toast('PDF se nepodařilo přečíst: ' + (e.message || e)); return; }
-  if (!parsed.blocks.length) { toast('V PDF jsem nenašel žádné řezy. Je to Seznam řezů z REF2MEN?'); return; }
-  imp = { file: file.name, order: parsed.order, customer: parsed.customer, jobId, blocks: parsed.blocks.map(b => {
+  if (!parsed.blocks.length) { toast('V PDF jsem nenašel žádné řezy. Je to Seznam řezů nebo Seznam přířezů z REF2MEN?'); return; }
+  for (const a of parsed.armatures || []) ensureArmature(a.code, a.name);
+  imp = { file: file.name, kind: parsed.kind || 'rezy', order: parsed.order, customer: parsed.customer, jobId, blocks: parsed.blocks.map(b => {
     const p = matchProfile(b), o = { ...b, on: !!p, profileId: p ? p.id : null, finishId: null, auto: { p: !!p, c: false } };
     resolveFinish(o); return o;
   }) };
@@ -1125,6 +1208,7 @@ function importView() {
     <div><button class="link on-navy" data-act="imp-cancel">← Zrušit import</button></div>
     <div class="panel accent">
       <h1>Import z REF2MEN</h1>
+      <div class="small muted">${imp.kind === 'prirezy' ? 'Seznam přířezů: rámy, křídla a dveřní křídla s armováním; ostatní díly (těsnění, sloupky, parapety…) se vynechají.' : 'Seznam řezů (optimalizace)'}</div>
       <div class="muted">${imp.order ? `Zakázka ${esc(imp.order)}` : esc(imp.file)}${imp.customer ? ' · ' + esc(imp.customer) : ''}</div>
       <label class="f" style="max-width:320px">Systém zakázky<select id="imp-system"><option value="">— různé —</option>${sortedSystems().map(s => `<option value="${s.id}" ${s.id === imp.systemId ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>
       <p class="small">${target ? `Profily se přidají do zakázky <b>${esc(target.name || 'Bez názvu')}</b>.` : 'Vytvoří se nová zakázka.'} Ke každému artiklu z PDF vyberte profil a barvu z katalogu. Aplikace si přiřazení zapamatuje, takže příště se doplní samo.</p>
@@ -1147,12 +1231,13 @@ function impBlocks(recognized) {
     if (!recognized && !b.on) return `<div class="imp-row">${head}</div>`;
     const lens = new Map(); b.cuts.forEach(c => lens.set(c.len, (lens.get(c.len) || 0) + 1));
     const body = `
-      <div class="small muted">V PDF: ${esc(b.ozn)} · ${esc(b.desc)} · barva ${esc(b.colorText)} ${esc(impCodes(b).join('/'))} · tyč ${num(b.barLen || settings.barLen)} mm</div>
+      <div class="small muted">V PDF: ${esc([b.ozn, b.desc, `barva ${b.colorText} ${impCodes(b).join('/')}`.trim(), b.barLen ? `tyč ${num(b.barLen)} mm` : ''].filter(Boolean).join(' · '))}</div>
       <div class="chips">${[...lens.entries()].sort((x, y) => y[0] - x[0]).map(([l, k]) => `<span class="chip">${k}× ${num(l)}</span>`).join('')}</div>
       ${b.on ? `<div class="pickers" style="grid-template-columns:1fr 1fr">
         ${pickerHtml(ctx, 'profiles', b.profileId)}${finishPickHtml(ctx, b)}
         ${open ? pickBoxHtml() : ''}
       </div>
+      ${b.on && b.cuts.some(c => c.armLen) ? `<label class="f" style="max-width:420px">Armování pro tento profil<select data-imp-arm="${i}">${armOptions(b.armSel !== undefined ? b.armSel : (P(b.profileId) || {}).armatureId, [...new Set(b.cuts.flatMap(c => c.armCodes || []))].join(', '))}</select></label>` : ''}
       <div class="actions">
         ${b.profileId ? (b.auto.p && b.profileId === (matchProfile(b) || {}).id ? '<span class="chip ok">profil rozpoznán</span>' : '') : `<button class="btn" data-act="imp-new-profile" data-i="${i}">Založit profil „${esc(b.ozn)}“</button>`}
         ${b.finishId && b.auto.c ? '<span class="chip ok">provedení rozpoznáno</span>' : ''}
@@ -1177,10 +1262,12 @@ function finishImport() {
     const codes = impCodes(b), f = F(b.finishId);
     if (codes.length) finTriple(f).forEach((id, k) => { const c = C(id); if (c && !c.ref && !colorByRef(codes[k])) put('colors', { ...c, ref: codes[k] }); });
     else finishMap[norm(b.colorText)] = b.finishId;
+    if (b.armSel !== undefined && (b.armSel || null) !== (p.armatureId || null)) put('profiles', { ...P(b.profileId), armatureId: b.armSel || null });
     const cuts = new Map();
     for (const x of b.cuts) {
-      const [a1, a2] = parseAngles(x.angles), k = x.len + '|' + x.label + '|' + a1 + '|' + a2;
-      if (cuts.has(k)) cuts.get(k).qty++; else cuts.set(k, { id: uid(), len: x.len, qty: 1, label: x.label, a1, a2 });
+      const [a1, a2] = parseAngles(x.angles), arm = x.armLen ? { len: x.armLen, codes: x.armCodes || [] } : null;
+      const k = [x.len, x.label, a1, a2, arm ? arm.len + ':' + arm.codes.join(',') : ''].join('|');
+      if (cuts.has(k)) cuts.get(k).qty++; else cuts.set(k, { id: uid(), len: x.len, qty: 1, label: x.label, a1, a2, ...(arm ? { arm } : {}) });
     }
     groups.push({ id: uid(), profileId: b.profileId, finishId: b.finishId, barLen: b.barLen || p.barLen || settings.barLen, useStock: true, selected: true, cuts: [...cuts.values()] });
   }
