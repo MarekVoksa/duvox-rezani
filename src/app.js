@@ -505,8 +505,7 @@ const views = {
     return `
     <h1 class="on-navy">Katalog</h1>
     <div class="panel">
-      <div class="spread"><div class="seg-ctl" role="group" aria-label="Katalog">
-${catTabs()}</div>
+      <div class="spread">${catTabs()}
         <button class="btn primary" data-act="cat-new">${isP ? 'Nový profil' : isF ? 'Nové provedení' : isA ? 'Nové armování' : 'Nová barva'}</button></div>
       ${isA ? '<p class="small muted">Armování z dokumentu „Seznam přířezů“ se sem přidá samo. U profilu můžete nastavit, které armování skutečně používáte; to pak má přednost před tím z dokumentu.</p>' : ''}
       ${isF ? '<p class="small muted">Provedení je složené ze tří barev jako v REF2MEN: uvnitř / jádro profilu / venku. Např. 159/159/159 je celá bílá, 7512/159/7512 bílý profil se zlatým dubem z obou stran. Při importu se zakládají sama.</p>' : kind === 'colors' ? '<p class="small muted">Číslo barvy z REF2MEN (bílá = 159) se používá při importu k sestavení provedení.</p>' : ''}
@@ -543,7 +542,7 @@ function settingsPanels() {
 }
 function catTabs() {
   const k = ui.catTab;
-  return `<div class="seg-ctl" role="group" aria-label="Katalog">
+  return `<div class="seg-ctl cat-tabs" role="group" aria-label="Katalog">
     <button data-act="cat-tab" data-kind="systems" aria-pressed="${k === 'systems'}">Systémy (${D.systems.size})</button>
     <button data-act="cat-tab" data-kind="profiles" aria-pressed="${k === 'profiles'}">Profily (${D.profiles.size})</button>
     <button data-act="cat-tab" data-kind="colors" aria-pressed="${k === 'colors'}">Barvy (${D.colors.size})</button>

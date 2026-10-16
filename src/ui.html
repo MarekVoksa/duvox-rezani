@@ -15,6 +15,7 @@
   color-scheme: light;
 }
 * { box-sizing: border-box }
+html, body { overflow-x: clip; }
 body { margin: 0; background: var(--navy); color: var(--navy); font-family: var(--font); font-size: 18px; line-height: 1.3; -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; }
 .wrap { max-width: 900px; margin: 0 auto; padding-inline: 16px; padding-block: 0 110px; }
 :focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
@@ -40,7 +41,8 @@ nav.tabs .n { font-size: 14px; color: var(--peri); margin-left: 3px; }
 @media (max-width: 700px) {
   .brand span { display: none; }
   nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; margin: 0; background: var(--navy); border-top: 4px solid var(--red); padding: 0 4px env(safe-area-inset-bottom, 0px); height: var(--tabbar); align-items: center; justify-content: space-around; z-index: 6; }
-  nav.tabs button { font-size: 17px; padding: 6px 4px 4px; }
+  nav.tabs button { font-size: clamp(14px, 4.3vw, 17px); padding: 6px 2px 4px; min-width: 0; }
+  nav.tabs { gap: 0; }
   nav.tabs button span { padding-left: .15em; }
   nav.tabs button::before { width: 0; }
   nav.tabs button[aria-current="true"]::before { width: calc(100% + .1em); }
@@ -198,6 +200,10 @@ section.view > .spread .btn:hover, section.view > .actions .btn:hover, .go .btn:
 .piece button:hover { color: var(--red-ink); }
 .seg-ctl { display: flex; border: 2px solid var(--navy); width: max-content; max-width: 100%; }
 .seg-ctl button { font: 700 18px var(--font); padding: 7px 16px; border: 0; background: var(--paper); color: var(--navy); cursor: pointer; }
+/* catalog sections wrap onto two rows on a phone instead of running off the screen */
+.seg-ctl.cat-tabs { flex-wrap: wrap; width: auto; }
+.seg-ctl.cat-tabs button { flex: 1 1 auto; padding: 7px 12px; }
+@media (max-width: 560px) { .seg-ctl.cat-tabs { width: 100%; } .seg-ctl.cat-tabs button { font-size: 16px; padding: 7px 8px; } }
 .seg-ctl button[aria-pressed="true"] { background: var(--navy); color: var(--cream); }
 .cat { display: grid; gap: 4px; }
 .cat .opt { background: var(--paper); }
