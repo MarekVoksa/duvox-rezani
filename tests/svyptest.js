@@ -1,7 +1,7 @@
 // The two REF2MEN documents of one order are matched to the same catalog profiles by article number:
 // import the optimization ("Seznam řezů"), create its profiles, then the přířezy list must recognize them on its own.
 // Also: positions with a letter ("5 A") and the decor side taken from the color text.
-// PDFs: argv[2] (řezy) and argv[3] (přířezy), defaults are order 2604051 in the project files (not in the repo). pdf.js: PDFJS_DIR.
+// PDFs: argv[2] (řezy) and argv[3] (přířezy), defaults are a sample order in the project files (not in the repo). pdf.js: PDFJS_DIR.
 const { chromium } = require('playwright'), fs = require('fs'), path = require('path'), os = require('os');
 const up = '/mnt/project-files/uploads/hearth/';
 const rezy = process.argv[2] || up + '371f1879-d747-4e38-8b1d-ca21ae84b6c0', prirezy = process.argv[3] || up + '0b0f23ed-f7fc-42d9-825e-d0f7d9e8e802';

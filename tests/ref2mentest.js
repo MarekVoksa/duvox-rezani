@@ -27,10 +27,10 @@ console.log(got);
 const want = ['550900 BLR 68 [1476 45°/45°, 2236 45°/45°]', '1 Dummy Funktion Armování [1525 90°/90°]'];
 if (JSON.stringify(got) !== JSON.stringify(want)) { console.log('FAIL, expected', want); process.exit(1); }
 
-// positions with a letter (order 2604051: the same windows for house A and B), written "5 A" or "2A"
+// positions with a letter (the same windows for house A and B), written "5 A" or "2A"
 const svyp = parseRef2men([
-  'Seznam řezů     Zakázka: 2604051     Datum: 27.10.2026     Strana 1',
-  'RD Třibřichy - Dům A,B / SVYP CZ, s.r.o.',
+  'Seznam řezů     Zakázka: 2608001     Datum: 27.10.2026     Strana 1',
+  'Stavba / Firma s.r.o.',
   'Číslo artiklu     Var     Ozn.     Barva artiklu',
   '567295 1741 Dv.kří Z     Dekor / bílá',
   '7512 / 159 / 159 / 601',
@@ -44,7 +44,7 @@ console.log(g2);
 if (JSON.stringify(g2) !== JSON.stringify(['567295 7512/159/159/601 [2223 P1A Dv.křídlo vlevo, 975 P5A Dv.křídlo nahoře]'])) { console.log('FAIL řezy positions'); process.exit(1); }
 const pr = parsePrirezy([
   'Seznam přířezů celk.     27.10.2026     Str. :     1',
-  'Počet pozic.........:     19     Číslo objednávky....:     2604051',
+  'Počet pozic.........:     19     Číslo objednávky....:     2608001',
   'FUNKCE..............: RÁM     GOLDEN OAK/WEISS',
   '6 A     567625     41BLR72 MD SYNMD (23/28/1,:2.158) l.|     2     2.281     135,0 135,0',
   '2A     567625     41BLR72 MD SYNMD (23/28/1,:     783) p.|     1     906     135,0 135,0',
