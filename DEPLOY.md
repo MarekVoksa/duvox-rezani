@@ -12,6 +12,8 @@ Sign up at https://dash.cloudflare.com/sign-up (free).
 2. Project name: `duvox-rezani` (must match `name` in `wrangler.jsonc`). Leave the build command empty and the deploy command as `npx wrangler deploy`; the repo's `wrangler.jsonc` does the rest (it builds the app and serves it).
 3. Its address is shown on the Worker's page, e.g. `duvox-rezani.<your-subdomain>.workers.dev`.
 
+If a build fails right away with "error occurred while fetching repository", Cloudflare lost access to the GitHub repo: in the Worker's **Settings → Build**, disconnect the repository and connect it again (branch `main`, deploy command `npx wrangler deploy`; a build command of `npm run build` is fine too), then retry the build.
+
 Until steps 3 to 5 are done the app shows "Server ještě není dokončený"; that is expected.
 
 ## 3. Database
