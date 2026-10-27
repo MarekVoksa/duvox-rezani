@@ -6,6 +6,8 @@
 //   "159 / 159 / 159 /"                          color codes
 //   "Číslo tyče 1 Křídlo Z60 BRID 6000 JŘ"       bar number, long name, bar length
 //   "1 [01] 01 KŘÍDLO Vlevo 1346 45,0° 45,0°"    position, field, function + side, length, angles
+//   "5 A [01] 01 DV.KŘÍDLO ..."                  a position can carry a letter (same window in house A and B): "5A"
+const prPos = s => String(s).replace(/\s+/g, '');
 function parseRef2men(lines) {
   const out = { order: '', customer: '', blocks: [] };
   let cur = null, expectCode = false, expectArticle = false;
@@ -42,7 +44,8 @@ function parseRef2men(lines) {
       if (!cur.barLen) cur.barLen = +m[2];
       continue;
     }
-    if ((m = t.match(/^(\d+)\s+\[(\d+)\]\s*(\d+)\s+(.+?)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)°\s+(\d+(?:[.,]\d+)?)°$/))) {
+    if ((m = t.match(/^(\d+(?: ?[A-Z])?)\s+\[(\d+)\]\s*(\d+)\s+(.+?)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)°\s+(\d+(?:[.,]\d+)?)°$/))) {
+      m[1] = prPos(m[1]);
       const len = parseFloat(m[5].replace(',', '.'));
       const what = m[4].toLowerCase().replace(/^./, c => c.toUpperCase());
       const a1 = m[6].replace(',0', ''), a2 = m[7].replace(',0', '');
@@ -74,20 +77,20 @@ function parsePrirezy(lines) {
   const out = { kind: 'prirezy', order: '', customer: '', blocks: [], armatures: [] };
   const blocks = new Map(), arms = [];
   let sec = null;   // {kind: 'profile'|'arm'|null, func, color}
-  const ROW = /^(\d+) (\S+) (\d{2,3})(.+?) ?(h\.-|d\.-|l\.\||p\.\||sv\||vo-) (\d+) (\d[\d.]*)(?: (\d+(?:,\d+)?) (\d+(?:,\d+)?))?$/;
+  const ROW = /^(\d+(?: ?[A-Z])?) (\S+) (\d{2,3})(.+?) ?(h\.-|d\.-|l\.\||p\.\||sv\||vo-) (\d+) (\d[\d.]*)(?: (\d+(?:,\d+)?) (\d+(?:,\d+)?))?$/;
   for (const raw of lines) {
     const t = raw.replace(/\s+/g, ' ').trim();
     let m;
     if ((m = t.match(/Číslo objednávky\.*:\s*(\S+)/)) && !out.order) out.order = m[1];
     if ((m = raw.match(/Stavba\.*:\s*(.+?)(?:\s{3,}|$)/)) && !out.customer) out.customer = m[1].trim();
     if ((m = raw.match(/^FUNKCE\.*:\s*(.+)$/))) {
-      const [func, second = ''] = m[1].split(/\s{3,}/).map(x => x.trim());
+      const [func, ...rest] = m[1].split(/\s{3,}/).map(x => x.trim()), second = rest.join(' ');   // "Bílá     /     dekor obrácený kašír"
       if (func === 'ARMOVÁNÍ') sec = PR_FUNCS[second] ? { kind: 'arm', func: second } : null;
       else sec = PR_FUNCS[func] ? { kind: 'profile', func, color: second } : null;
       continue;
     }
     if (!sec || !(m = t.match(ROW))) continue;
-    const [, pos, article, variant, mid, place, qty, len, a1, a2] = m;
+    const [, rawPos, article, variant, mid, place, qty, len, a1, a2] = m, pos = prPos(rawPos);
     if (sec.kind === 'arm') { arms.push({ code: article, name: mid.trim(), parent: sec.func, pos, place, qty: +qty, len: prNum(len) }); continue; }
     const am = mid.match(/\(\s*([^:)]*?)\s*:\s*([\d.]+)\s*\)\s*$/);
     const name = (am ? mid.slice(0, am.index) : mid).trim();

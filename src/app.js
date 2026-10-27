@@ -1150,23 +1150,42 @@ function saveResult() {
 
 // ---- REF2MEN import: match PDF articles to catalog profiles and colors, learn new names ----
 const hasAlias = (list, s) => (list || []).some(a => norm(a) === norm(s));
+// The article number (číslo artiklu) is the identifier: it is the same in both REF2MEN documents, while names and
+// variants differ ("1741 Dv.kří Z" vs "41Dv.kří Z SYNEG"). A profile can carry more article numbers as aliases.
+// Names only match profiles that have no article number yet (older catalogs).
+const artKey = s => norm(s).replace(/\s+/g, '');
+const isArticle = s => /^\d{4,}$/.test(artKey(s));
+const profileArticles = p => [p.code, ...(p.aliases || []).filter(isArticle)].filter(Boolean).map(artKey);
 function matchProfile(b) {
-  const keys = [b.article, b.ozn, b.desc, String(b.ozn || '').replace(/\s+(BRILL|BRID)$/i, '')].filter(Boolean).map(norm);
-  return [...D.profiles.values()].find(p => p.code && norm(p.code) === norm(b.article)) ||
-    [...D.profiles.values()].find(p => (p.aliases || []).some(a => keys.includes(norm(a))));
+  const art = artKey(b.article), all = [...D.profiles.values()];
+  const byArt = art && all.find(p => profileArticles(p).includes(art));
+  if (byArt || isArticle(b.article)) return byArt || all.find(p => !profileArticles(p).length && nameMatch(p, b));
+  return all.find(p => nameMatch(p, b));
+}
+function nameMatch(p, b) {
+  const keys = [b.ozn, b.desc, String(b.ozn || '').replace(/\s+(BRILL|BRID|SYNEG|SYNMD)$/i, '')].filter(Boolean).map(norm);
+  return (p.aliases || []).some(a => !isArticle(a) && keys.includes(norm(a)));
 }
 // REF2MEN color codes "inside/core/outside/" (a 4th code, if any, is ignored)
+// The codes do not always say which side is foiled ("Dekor / bílá" and "Bílá / dekor obrácený kašír" both come as
+// 7512/159/159/601), so when the color text names one white side and one decor side ("outside / inside"), the text decides.
 function impCodes(b) {
   const c = String(b.colorCode || '').split('/').map(s => s.trim()).filter(Boolean).slice(0, 3);
   while (c.length && c.length < 3) c.push(c[c.length - 1]);
+  const sides = String(b.colorText || '').split('/').map(x => x.trim()).filter(Boolean);
+  const decor = c.find(x => x !== '159');
+  if (c.length && sides.length === 2 && decor && c.includes('159') && isWhiteText(sides[0]) !== isWhiteText(sides[1]))
+    return isWhiteText(sides[1]) ? ['159', c[1], decor] : [decor, c[1], '159'];
   return c;
 }
-// the provedení for a block: built from its color codes, or remembered from an earlier import without codes
+// the provedení for a block: built from its color codes, or remembered from an earlier import (the přířezy list has
+// no codes, but its article + color text was seen in the order's optimization)
+const finKey = b => artKey(b.article) + '|' + norm(b.colorText);
 function resolveFinish(b) {
   const codes = impCodes(b);
   b.missing = [...new Set(codes.filter(r => !colorByRef(r)))];
   if (codes.length && !b.missing.length) { const [i, c, o] = codes.map(r => colorByRef(r).id); b.finishId = ensureFinish(i, c, o).id; b.auto.c = true; return; }
-  const known = !codes.length && (settings.finishMap || {})[norm(b.colorText)];
+  const fm = settings.finishMap || {}, known = !codes.length && (fm[finKey(b)] || fm[norm(b.colorText)]);
   if (known && F(known)) { b.finishId = known; b.auto.c = true; }
 }
 // name for a new color with this code: white for 159, otherwise the decor named in the PDF text
@@ -1260,7 +1279,8 @@ function finishImport() {
     // a provedení picked by hand teaches the colors their REF2MEN numbers, and is remembered for color texts without codes
     const codes = impCodes(b), f = F(b.finishId);
     if (codes.length) finTriple(f).forEach((id, k) => { const c = C(id); if (c && !c.ref && !colorByRef(codes[k])) put('colors', { ...c, ref: codes[k] }); });
-    else finishMap[norm(b.colorText)] = b.finishId;
+    finishMap[finKey(b)] = b.finishId;
+    if (!codes.length) finishMap[norm(b.colorText)] = b.finishId;
     if (b.armSel !== undefined && (b.armSel || null) !== (p.armatureId || null)) put('profiles', { ...P(b.profileId), armatureId: b.armSel || null });
     const cuts = new Map();
     for (const x of b.cuts) {
