@@ -40,4 +40,6 @@ npm test            # builds, then drives the app in Chromium
 
 The import test needs the sample REF2MEN PDF (not in the repo, it holds customer data) and pdf.js from a local folder: `PDFJS_DIR=path/to/pdfjs-dist/build node tests/imptest.js file.pdf`.
 
+`tests/prtest.js` (a "Seznam přířezů celk.") and `tests/svyptest.js` (an order's "Seznam řezů" and "Seznam přířezů" together, checking that profiles are matched by article number) take their PDFs the same way: `node tests/svyptest.js rezy.pdf prirezy.pdf`.
+
 `tests/fakedb.js` imitates the artifact database (read-only snapshot data, slow taps), because those two behaviours caused real bugs that plain local runs did not show.
